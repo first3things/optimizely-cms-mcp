@@ -10,8 +10,10 @@
     "start": "node dist/index.js",
     "test": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:tools": "node quick-test.js",
-    "test:tools:debug": "LOG_LEVEL=debug node quick-test.js",
+    "test:tools": "node scripts/quick-test.js",
+    "test:tools:debug": "LOG_LEVEL=debug node scripts/quick-test.js",
+    "check:credentials": "node scripts/diagnostics/check-credentials.mjs",
+    "test:connection": "node scripts/diagnostics/test-connection.mjs",
     "lint": "eslint src/**/*.ts",
     "typecheck": "tsc --noEmit",
     "prepare": "npm run build"
