@@ -6,6 +6,7 @@ import { getCacheManager } from './utils/cache.js';
 import { handleError } from './utils/errors.js';
 import type { ToolContext } from './types/tools.js';
 import type { Tool, ListToolsResult } from '@modelcontextprotocol/sdk/types.js';
+import { getGraphTools, registerGraphHandlers } from './tools/graph/register.js';
 
 export async function registerAllTools(server: Server, config: Config): Promise<void> {
   const logger = getLogger();
@@ -19,7 +20,7 @@ export async function registerAllTools(server: Server, config: Config): Promise<
   };
 
   // Define available tools
-  const tools: Tool[] = [
+  const utilityTools: Tool[] = [
     {
       name: 'health-check',
       description: 'Check API connectivity and server health',
@@ -55,6 +56,18 @@ export async function registerAllTools(server: Server, config: Config): Promise<
     }
   ];
 
+  // Combine all tools
+  const tools: Tool[] = [
+    ...utilityTools,
+    ...getGraphTools()
+  ];
+
+  // Create handler map
+  const handlers = new Map<string, (params: any, context: ToolContext) => Promise<any>>();
+  
+  // Register graph handlers
+  registerGraphHandlers(handlers);
+
   // Register capabilities
   server.registerCapabilities({
     tools: {
@@ -88,6 +101,13 @@ export async function registerAllTools(server: Server, config: Config): Promise<
     logger.debug(`Tool ${name} called`, { args });
 
     try {
+      // Check if we have a handler for this tool
+      const handler = handlers.get(name);
+      if (handler) {
+        return await handler(args || {}, context);
+      }
+
+      // Handle utility tools
       switch (name) {
         case 'health-check':
           return await handleHealthCheck(context);
@@ -175,8 +195,7 @@ async function handleGetDocumentation(params: { category?: string }, context: To
   
   logger.info('Documentation requested', { category: params.category });
   
-  // This will be expanded to return actual documentation
-  const docs = {
+  const docs: any = {
     overview: 'Optimizely MCP Server provides tools for interacting with Optimizely CMS',
     categories: {
       graph: 'GraphQL query tools for content retrieval',
@@ -186,13 +205,36 @@ async function handleGetDocumentation(params: { category?: string }, context: To
       workflow: 'Workflow management',
       composite: 'Complex multi-step operations',
       utility: 'Helper and utility tools'
-    },
-    availableTools: [
-      'health-check',
-      'get-config',
-      'get-documentation'
-    ]
+    }
   };
+
+  // Get all available tools grouped by category
+  const toolsByCategory: Record<string, string[]> = {
+    utility: ['health-check', 'get-config', 'get-documentation'],
+    graph: [
+      'graph-query',
+      'graph-introspection',
+      'graph-search',
+      'graph-autocomplete',
+      'graph-faceted-search',
+      'graph-get-content',
+      'graph-get-content-by-path',
+      'graph-get-children',
+      'graph-get-ancestors',
+      'graph-get-related'
+    ],
+    content: [], // Will be added in Phase 3
+    assets: [],  // Will be added in Phase 4
+    types: [],   // Will be added in Phase 4
+    workflow: [], // Will be added in Phase 4
+    composite: [] // Will be added in Phase 5
+  };
+
+  if (params.category) {
+    docs.tools = toolsByCategory[params.category] || [];
+  } else {
+    docs.availableTools = Object.values(toolsByCategory).flat();
+  }
   
   return {
     content: [{
