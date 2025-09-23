@@ -23,8 +23,7 @@ export const ConfigSchema = z.object({
     clientId: z.string(),
     clientSecret: z.string(),
     grantType: z.string().default('client_credentials'),
-    scope: z.string().default('epi_content_management'),
-    tokenEndpoint: z.string().optional()
+    tokenEndpoint: z.string().url().optional()
   }),
   options: z.object({
     cacheTtl: z.number().default(300),
@@ -58,7 +57,6 @@ export interface CMAConfig {
   clientId: string;
   clientSecret: string;
   grantType: string;
-  scope: string;
   tokenEndpoint?: string;
   timeout?: number;
   maxRetries?: number;

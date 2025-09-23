@@ -11,7 +11,6 @@ describe('OptimizelyContentClient', () => {
     clientId: 'test-client',
     clientSecret: 'test-secret',
     grantType: 'client_credentials',
-    scope: 'test-scope',
     timeout: 30000,
     maxRetries: 3
   };
@@ -56,13 +55,12 @@ describe('OptimizelyContentClient', () => {
       // Check token request
       expect(global.fetch).toHaveBeenCalled();
       const tokenCall = (global.fetch as any).mock.calls[0];
-      expect(tokenCall[0]).toBe(`${mockConfig.baseUrl}/token`);
+      expect(tokenCall[0]).toBe('https://api.cms.optimizely.com/oauth/token');
       expect(tokenCall[1].method).toBe('POST');
       const tokenBody = tokenCall[1].body;
       expect(tokenBody.get('client_id')).toBe('test-client');
       expect(tokenBody.get('client_secret')).toBe('test-secret');
       expect(tokenBody.get('grant_type')).toBe('client_credentials');
-      expect(tokenBody.get('scope')).toBe('test-scope');
 
       // Check content request with token
       const contentCall = (global.fetch as any).mock.calls[1];
@@ -78,8 +76,7 @@ describe('OptimizelyContentClient', () => {
         .mockResolvedValueOnce(new Response(JSON.stringify({
           access_token: 'first-token',
           token_type: 'Bearer',
-          expires_in: 60, // 1 minute
-          scope: 'test-scope'
+          expires_in: 60 // 1 minute
         }), {
           status: 200,
           headers: new Headers({ 'content-type': 'application/json' })
@@ -91,8 +88,7 @@ describe('OptimizelyContentClient', () => {
         .mockResolvedValueOnce(new Response(JSON.stringify({
           access_token: 'second-token',
           token_type: 'Bearer',
-          expires_in: 3600,
-          scope: 'test-scope'
+          expires_in: 3600
         }), {
           status: 200,
           headers: new Headers({ 'content-type': 'application/json' })
@@ -115,8 +111,8 @@ describe('OptimizelyContentClient', () => {
       expect(global.fetch).toHaveBeenCalledTimes(4); // 2 auth + 2 content requests
       const firstTokenCall = (global.fetch as any).mock.calls[0];
       const secondTokenCall = (global.fetch as any).mock.calls[2];
-      expect(firstTokenCall[0]).toBe(`${mockConfig.baseUrl}/token`);
-      expect(secondTokenCall[0]).toBe(`${mockConfig.baseUrl}/token`);
+      expect(firstTokenCall[0]).toBe('https://api.cms.optimizely.com/oauth/token');
+      expect(secondTokenCall[0]).toBe('https://api.cms.optimizely.com/oauth/token');
     });
   });
 

@@ -21,8 +21,7 @@ describe('Health Check Tool', () => {
       baseUrl: 'https://test.optimizely.com/api',
       clientId: 'test-client',
       clientSecret: 'test-secret',
-      grantType: 'client_credentials',
-      scope: 'test-scope'
+      grantType: 'client_credentials'
     },
     options: {
       cacheTtl: 300,

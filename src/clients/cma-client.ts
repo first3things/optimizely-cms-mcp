@@ -21,7 +21,6 @@ export class OptimizelyContentClient {
   private clientId: string;
   private clientSecret: string;
   private grantType: string;
-  private scope: string;
   private tokenEndpoint: string;
   private timeout: number;
   private maxRetries: number;
@@ -35,8 +34,7 @@ export class OptimizelyContentClient {
     this.clientId = config.clientId;
     this.clientSecret = config.clientSecret;
     this.grantType = config.grantType;
-    this.scope = config.scope;
-    this.tokenEndpoint = config.tokenEndpoint || `${this.baseUrl}/token`;
+    this.tokenEndpoint = config.tokenEndpoint || 'https://api.cms.optimizely.com/oauth/token';
     this.timeout = config.timeout || 30000;
     this.maxRetries = config.maxRetries || 3;
   }
@@ -59,8 +57,7 @@ export class OptimizelyContentClient {
         body: new URLSearchParams({
           client_id: this.clientId,
           client_secret: this.clientSecret,
-          grant_type: this.grantType,
-          scope: this.scope
+          grant_type: this.grantType
         }),
         signal: AbortSignal.timeout(this.timeout)
       });
@@ -82,8 +79,7 @@ export class OptimizelyContentClient {
       
       this.logger.info('Authentication successful', {
         tokenType: token.token_type,
-        expiresIn: token.expires_in,
-        scope: token.scope
+        expiresIn: token.expires_in
       });
     } catch (error) {
       if (error instanceof AuthenticationError) {

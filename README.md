@@ -5,7 +5,7 @@ A Model Context Protocol (MCP) server for Optimizely CMS, providing AI assistant
 ## Features
 
 - **GraphQL Integration**: Query content using Optimizely Graph API with multiple authentication methods
-- **Content Management**: Full CRUD operations via Content Management API v3.0
+- **Content Management**: Full CRUD operations via Content Management API (Preview3/Experimental)
 - **Version Management**: Create, publish, and manage content versions
 - **Content Types**: Explore and understand content type schemas
 - **Workflow Support**: Manage content approval workflows
@@ -46,11 +46,11 @@ GRAPH_SINGLE_KEY=your-single-key
 # GRAPH_SECRET_KEY=your-secret-key
 
 # Content Management API Configuration
-CMA_BASE_URL=https://example.com/api/episerver/v3.0
-CMA_CLIENT_ID=your-client-id
+CMA_BASE_URL=https://api.cms.optimizely.com/preview3/experimental
+CMA_CLIENT_ID=your-client-id  # Get from Settings > API Keys in CMS
 CMA_CLIENT_SECRET=your-client-secret
 CMA_GRANT_TYPE=client_credentials
-CMA_SCOPE=epi_content_management
+CMA_TOKEN_ENDPOINT=https://api.cms.optimizely.com/oauth/token
 
 # Optional Configuration
 CACHE_TTL=300000 # Cache TTL in milliseconds (default: 5 minutes)
@@ -120,7 +120,7 @@ Add to your Claude Desktop configuration (`~/Library/Application Support/Claude/
         "GRAPH_ENDPOINT": "https://cg.optimizely.com/content/v2/graphql",
         "GRAPH_AUTH_METHOD": "single_key",
         "GRAPH_SINGLE_KEY": "your-key",
-        "CMA_BASE_URL": "https://example.com/api/episerver/v3.0",
+        "CMA_BASE_URL": "https://api.cms.optimizely.com/preview3/experimental",
         "CMA_CLIENT_ID": "your-client-id",
         "CMA_CLIENT_SECRET": "your-client-secret"
       }
@@ -239,7 +239,8 @@ optimizely-mcp-server/
 
 1. **Authentication Errors**
    - Verify your API credentials in `.env`
-   - Check token expiration for CMA
+   - For CMA: Create API keys in Settings > API Keys in your Optimizely CMS instance
+   - Check token expiration for CMA (tokens expire after 5 minutes)
    - Ensure correct auth method for Graph
 
 2. **Connection Issues**

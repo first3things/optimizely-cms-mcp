@@ -31,7 +31,6 @@ export function loadConfig(): Config {
       clientId: process.env.CMA_CLIENT_ID,
       clientSecret: process.env.CMA_CLIENT_SECRET,
       grantType: process.env.CMA_GRANT_TYPE,
-      scope: process.env.CMA_SCOPE,
       tokenEndpoint: process.env.CMA_TOKEN_ENDPOINT
     },
     options: {
@@ -73,8 +72,7 @@ export function getCMAConfig(config: Config): CMAConfig {
     clientId: config.cma.clientId,
     clientSecret: config.cma.clientSecret,
     grantType: config.cma.grantType,
-    scope: config.cma.scope,
-    tokenEndpoint: config.cma.tokenEndpoint || `${config.cma.baseUrl}/token`,
+    tokenEndpoint: config.cma.tokenEndpoint || 'https://api.cms.optimizely.com/oauth/token',
     timeout: config.options.timeout,
     maxRetries: config.options.maxRetries
   };
