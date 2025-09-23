@@ -7,6 +7,7 @@ import { handleError } from './utils/errors.js';
 import type { ToolContext } from './types/tools.js';
 import type { Tool, ListToolsResult } from '@modelcontextprotocol/sdk/types.js';
 import { getGraphTools, registerGraphHandlers } from './tools/graph/register.js';
+import { getContentTools, registerContentHandlers } from './tools/content/register.js';
 
 export async function registerAllTools(server: Server, config: Config): Promise<void> {
   const logger = getLogger();
@@ -59,7 +60,8 @@ export async function registerAllTools(server: Server, config: Config): Promise<
   // Combine all tools
   const tools: Tool[] = [
     ...utilityTools,
-    ...getGraphTools()
+    ...getGraphTools(),
+    ...getContentTools()
   ];
 
   // Create handler map
@@ -67,6 +69,9 @@ export async function registerAllTools(server: Server, config: Config): Promise<
   
   // Register graph handlers
   registerGraphHandlers(handlers);
+  
+  // Register content handlers
+  registerContentHandlers(handlers);
 
   // Register capabilities
   server.registerCapabilities({
@@ -223,10 +228,30 @@ async function handleGetDocumentation(params: { category?: string }, context: To
       'graph-get-ancestors',
       'graph-get-related'
     ],
-    content: [], // Will be added in Phase 3
+    content: [
+      'content-create',
+      'content-get',
+      'content-update',
+      'content-patch',
+      'content-delete',
+      'content-move',
+      'content-copy',
+      'content-list-versions',
+      'content-create-version',
+      'content-promote-version',
+      'content-list-languages',
+      'content-create-language-branch'
+    ],
     assets: [],  // Will be added in Phase 4
-    types: [],   // Will be added in Phase 4
-    workflow: [], // Will be added in Phase 4
+    types: [
+      'type-list',
+      'type-get',
+      'type-get-schema'
+    ],
+    workflow: [
+      'workflow-get-status',
+      'workflow-transition'
+    ],
     composite: [] // Will be added in Phase 5
   };
 
