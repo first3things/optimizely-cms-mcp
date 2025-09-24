@@ -26,37 +26,70 @@ import {
   executeWorkflowGetStatus,
   executeWorkflowTransition
 } from '../../logic/workflow/operations.js';
+import {
+  executeGetSiteInfo,
+  executeTestContentApi
+} from '../../logic/content/site-info.js';
 
 export function getContentTools(): Tool[] {
   return [
+    // Site Information Tools
+    {
+      name: 'content-site-info',
+      description: 'Get guidance on finding container GUIDs and using the Content Management API',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+        additionalProperties: false
+      }
+    },
+    {
+      name: 'content-test-api',
+      description: 'Test Content Management API connectivity and available endpoints',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+        additionalProperties: false
+      }
+    },
+    
     // Content CRUD Operations
     {
       name: 'content-create',
-      description: 'Create new content items',
+      description: 'Create new content items. IMPORTANT: Requires a container GUID. Use the Optimizely CMS admin to find valid container GUIDs.',
       inputSchema: {
         type: 'object',
         properties: {
           contentType: {
             type: ['string', 'array'],
             items: { type: 'string' },
-            description: 'Content type identifier(s)'
+            description: 'Content type identifier (e.g., "StandardPage", "ArticlePage")'
           },
           name: {
             type: 'string',
-            description: 'Content name'
+            description: 'Content name (internal identifier)'
           },
-          properties: {
-            type: 'object',
-            description: 'Content properties',
-            additionalProperties: true
+          displayName: {
+            type: 'string',
+            description: 'Display name (shown in UI)'
+          },
+          container: {
+            type: 'string',
+            description: 'Parent container GUID (required). Example: "12345678-1234-1234-1234-123456789012"'
           },
           parentId: {
             type: ['string', 'integer'],
-            description: 'Parent content ID (optional)'
+            description: 'Alternative to container - must be a GUID'
+          },
+          properties: {
+            type: 'object',
+            description: 'Content properties (MainBody, Title, etc.)',
+            additionalProperties: true
           },
           language: {
             type: 'string',
-            description: 'Content language (optional)'
+            description: 'Content language code (default: "en")',
+            default: 'en'
           }
         },
         required: ['contentType', 'name'],
@@ -440,6 +473,15 @@ export function registerContentHandlers(
   handlers: Map<string, (params: any, context: ToolContext) => Promise<any>>
 ): void {
   const cmaConfig = (context: ToolContext) => getCMAConfig(context.config);
+
+  // Site information handlers
+  handlers.set('content-site-info', async (params, context) => 
+    executeGetSiteInfo(cmaConfig(context), params)
+  );
+  
+  handlers.set('content-test-api', async (params, context) => 
+    executeTestContentApi(cmaConfig(context), params)
+  );
 
   // Content CRUD handlers
   handlers.set('content-create', async (params, context) => 

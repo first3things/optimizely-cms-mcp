@@ -135,7 +135,7 @@ notepad %APPDATA%\Claude\claude_desktop_config.json
         "GRAPH_ENDPOINT": "https://cg.optimizely.com/content/v2",
         "GRAPH_AUTH_METHOD": "single_key",
         "GRAPH_SINGLE_KEY": "your-key",
-        "CMA_BASE_URL": "https://api.cms.optimizely.com/preview3",
+        "CMA_BASE_URL": "https://api.cms.optimizely.com/preview3/experimental",
         "CMA_CLIENT_ID": "your-client-id",
         "CMA_CLIENT_SECRET": "your-client-secret"
       }

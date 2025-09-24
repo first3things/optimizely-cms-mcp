@@ -19,9 +19,11 @@ import { z } from 'zod';
 const CreateContentSchema = z.object({
   contentType: z.union([z.string(), z.array(z.string())]),
   name: z.string().min(1),
+  displayName: z.string().min(1).optional(),
   properties: z.record(z.any()).optional(),
   parentId: z.union([z.string(), z.number()]).optional(),
-  language: z.string().optional()
+  container: z.string().optional(), // GUID of parent container
+  language: z.string().optional().default('en')
 });
 
 const UpdateContentSchema = z.object({
@@ -92,15 +94,43 @@ export async function executeContentCreate(
     const validatedParams = validateInput(CreateContentSchema, params);
     const client = new OptimizelyContentClient(config);
     
-    const request: CreateContentRequest = {
-      contentType: validatedParams.contentType,
+    // Prepare the request according to CMA API requirements
+    const request: any = {
+      contentType: Array.isArray(validatedParams.contentType) 
+        ? validatedParams.contentType[0] 
+        : validatedParams.contentType,
       name: sanitizeInput(validatedParams.name) as string,
-      properties: sanitizeInput(validatedParams.properties),
-      language: validatedParams.language
+      displayName: validatedParams.displayName || validatedParams.name,
+      language: validatedParams.language || 'en'
     };
+
+    // Handle properties
+    if (validatedParams.properties) {
+      request.properties = sanitizeInput(validatedParams.properties);
+    }
     
-    if (validatedParams.parentId) {
-      request.parentLink = parseContentReference(validatedParams.parentId);
+    // Handle parent container - CMA API requires either 'container' or 'owner'
+    if (validatedParams.container) {
+      request.container = validatedParams.container;
+    } else if (validatedParams.parentId) {
+      // Try to parse parentId as GUID or convert to container reference
+      const parentRef = parseContentReference(validatedParams.parentId);
+      if (parentRef.guidValue) {
+        request.container = parentRef.guidValue;
+      } else {
+        throw new ValidationError(
+          'Parent must be specified as a GUID. The Content Management API requires a valid container GUID.\n' +
+          'Example: "container": "12345678-1234-1234-1234-123456789012"\n' +
+          'To find valid container GUIDs, you may need to use the Optimizely CMS admin interface.'
+        );
+      }
+    } else {
+      throw new ValidationError(
+        'A parent container is required for content creation. Please provide either:\n' +
+        '- "container": "<GUID>" (e.g., "12345678-1234-1234-1234-123456789012")\n' +
+        '- "parentId": "<GUID>"\n\n' +
+        'To find valid container GUIDs, check the Optimizely CMS admin interface or contact your administrator.'
+      );
     }
     
     const result = await client.post<ContentItem>('/content', request);
