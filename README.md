@@ -132,12 +132,15 @@ notepad %APPDATA%\Claude\claude_desktop_config.json
       "command": "node",
       "args": ["C:\\Projects\\FTT\\CMS MCP\\optimizely-cms-mcp\\optimizely-cms-mcp\\dist\\index.js"],
       "env": {
+        "LOG_LEVEL": "error",
         "GRAPH_ENDPOINT": "https://cg.optimizely.com/content/v2",
         "GRAPH_AUTH_METHOD": "single_key",
         "GRAPH_SINGLE_KEY": "your-key",
         "CMA_BASE_URL": "https://api.cms.optimizely.com/preview3",
         "CMA_CLIENT_ID": "your-client-id",
-        "CMA_CLIENT_SECRET": "your-client-secret"
+        "CMA_CLIENT_SECRET": "your-client-secret",
+        "CMA_GRANT_TYPE": "client_credentials",
+        "CMA_TOKEN_ENDPOINT": "https://api.cms.optimizely.com/oauth/token"
       }
     }
   }
