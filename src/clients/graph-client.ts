@@ -81,7 +81,7 @@ export class OptimizelyGraphClient {
           throw new AuthenticationError('Single key authentication requires singleKey');
         }
         return {
-          'Authorization': `Bearer ${this.auth.singleKey}`,
+          'Authorization': `epi-single ${this.auth.singleKey}`,
           'Content-Type': 'application/json'
         };
       

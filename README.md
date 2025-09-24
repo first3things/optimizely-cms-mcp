@@ -38,7 +38,7 @@ SERVER_VERSION=1.0.0
 TRANSPORT=stdio
 
 # Optimizely Graph Configuration
-GRAPH_ENDPOINT=https://cg.optimizely.com/content/v2/graphql
+GRAPH_ENDPOINT=https://cg.optimizely.com/content/v2
 GRAPH_AUTH_METHOD=single_key # Options: single_key, hmac, basic, bearer, oidc
 GRAPH_SINGLE_KEY=your-single-key
 # For HMAC auth:
@@ -46,7 +46,7 @@ GRAPH_SINGLE_KEY=your-single-key
 # GRAPH_SECRET_KEY=your-secret-key
 
 # Content Management API Configuration
-CMA_BASE_URL=https://api.cms.optimizely.com/preview3/experimental
+CMA_BASE_URL=https://api.cms.optimizely.com/preview3
 CMA_CLIENT_ID=your-client-id  # Get from Settings > API Keys in CMS
 CMA_CLIENT_SECRET=your-client-secret
 CMA_GRANT_TYPE=client_credentials
@@ -85,17 +85,11 @@ node dist/index.js
 ### Testing the Server
 
 ```bash
-# Run all tests
+# Run all unit tests
 npm test
-
-# Run tests in watch mode
-npm run test:watch
 
 # Run tests with coverage
 npm run test:coverage
-
-# Run specific test file
-npm test tests/unit/graph-client.test.ts
 
 # Type checking
 npm run typecheck
@@ -104,23 +98,44 @@ npm run typecheck
 npm run lint
 ```
 
+## How MCP Servers Work
+
+MCP servers communicate via **stdio** (standard input/output), not HTTP ports:
+
+- **No port required** - The server doesn't listen on any network port
+- **Process-based** - Claude Desktop spawns your server as a child process
+- **JSON-RPC messages** - Communication happens through stdin/stdout pipes
+- **Secure** - No network exposure, runs only when Claude needs it
+
 ## MCP Client Configuration
 
-### Claude Desktop
+### Claude Desktop Setup
 
-Add to your Claude Desktop configuration (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
+#### Step 1: Find your config file
+
+Open the configuration file in a text editor:
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Linux**: `~/.config/Claude/claude_desktop_config.json`
+
+For Windows, you can open it quickly with:
+```cmd
+notepad %APPDATA%\Claude\claude_desktop_config.json
+```
+
+#### Step 2: Add the server configuration
 
 ```json
 {
   "mcpServers": {
     "optimizely": {
       "command": "node",
-      "args": ["/path/to/optimizely-mcp-server/dist/index.js"],
+      "args": ["C:\\Projects\\FTT\\CMS MCP\\optimizely-cms-mcp\\optimizely-cms-mcp\\dist\\index.js"],
       "env": {
-        "GRAPH_ENDPOINT": "https://cg.optimizely.com/content/v2/graphql",
+        "GRAPH_ENDPOINT": "https://cg.optimizely.com/content/v2",
         "GRAPH_AUTH_METHOD": "single_key",
         "GRAPH_SINGLE_KEY": "your-key",
-        "CMA_BASE_URL": "https://api.cms.optimizely.com/preview3/experimental",
+        "CMA_BASE_URL": "https://api.cms.optimizely.com/preview3",
         "CMA_CLIENT_ID": "your-client-id",
         "CMA_CLIENT_SECRET": "your-client-secret"
       }
@@ -128,6 +143,27 @@ Add to your Claude Desktop configuration (`~/Library/Application Support/Claude/
   }
 }
 ```
+
+#### Step 3: Restart Claude Desktop
+
+After saving the config file:
+1. Completely quit Claude Desktop (not just close the window)
+2. Start Claude Desktop again
+3. The Optimizely tools should now be available
+
+#### Step 4: Verify it's working
+
+In a new Claude conversation, try:
+- "Can you list the available Optimizely tools?"
+- "Use the health-check tool to test the connection"
+
+### Troubleshooting
+
+If the server doesn't load:
+1. Check the file path is correct and uses proper escaping (`\\` for Windows)
+2. Ensure you've built the project (`npm run build`)
+3. Verify the `dist/index.js` file exists
+4. Check Claude's logs for errors
 
 ### Other MCP Clients
 
@@ -232,6 +268,64 @@ optimizely-mcp-server/
 - Mock external API calls
 - Test error scenarios
 - Maintain >80% coverage
+
+## Testing & Debugging
+
+### Unit Tests
+
+Run automated tests with Vitest:
+
+```bash
+# Run unit tests
+npm test
+
+# Run with coverage report
+npm run test:coverage
+```
+
+Unit tests are located in `/tests/` and cover:
+- GraphQL client functionality
+- CMA client operations
+- Health check features
+
+### Integration Testing & Debugging
+
+Test your setup with these npm scripts:
+
+```bash
+# Check credentials are valid
+npm run check:credentials
+
+# Test MCP tools
+npm run test:tools
+
+# Test with debug output
+npm run test:tools:debug
+
+# Test GraphQL connection
+npm run debug:graph
+
+# Validate API key format
+npm run validate:key
+```
+
+### Debugging Scripts
+
+The `scripts/` directory contains utilities for testing and debugging:
+
+- **`quick-test.js`** - Test MCP server tools through stdio
+- **`test-with-debug.js`** - Detailed API request/response logging
+- **`debug-graph.js`** - Direct GraphQL endpoint testing
+- **`debug-auth-comprehensive.js`** - Test all authentication methods
+- **`validate-key.js`** - Validate GraphQL key format
+- **`find-graphql-endpoint.js`** - Discover your GraphQL endpoint
+
+For PowerShell users, set environment variables like this:
+```powershell
+$env:LOG_LEVEL="debug"; npm run test:tools:debug
+```
+
+See [scripts/TESTING_SCRIPTS.md](scripts/TESTING_SCRIPTS.md) for detailed documentation.
 
 ## Troubleshooting
 

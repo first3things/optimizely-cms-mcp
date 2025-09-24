@@ -1,30 +1,40 @@
-# Scripts
+# Scripts Directory
 
-This directory contains utility scripts for testing and managing the Optimizely MCP Server.
+This directory contains debugging utilities and testing tools for the Optimizely MCP Server.
 
-## quick-test.js
+## Overview
 
-A comprehensive test script that validates your MCP server installation and API connections.
+These scripts are **not** unit tests (which live in `/tests/`). Instead, they are interactive debugging tools and utilities for:
+- Testing API connectivity
+- Validating credentials
+- Debugging authentication issues
+- Manual testing of MCP tools
 
-### Usage:
+## Available Scripts
+
+See [TESTING_SCRIPTS.md](TESTING_SCRIPTS.md) for detailed documentation of each script.
+
+### Quick Reference
+
 ```bash
-npm run test:tools        # Run the test
-npm run test:tools:debug  # Run with debug logging
+# Test MCP tools
+npm run test:tools
+
+# Check credentials
+npm run check:credentials
+
+# Debug GraphQL connection
+npm run debug:graph
+
+# Validate API key
+npm run validate:key
+
+# Find GraphQL endpoint
+npm run find:endpoint
 ```
 
-This script will:
-- Test connectivity to both GraphQL and CMA APIs
-- Run a health check
-- List content types
-- Perform a content search
-- Show colored pass/fail results
+## Prerequisites
 
-## testing/
-
-This subdirectory contains temporary test scripts used during development and debugging. These scripts are excluded from version control and can be safely deleted.
-
-### Note:
-Before running tests, ensure you have:
-1. Built the project: `npm run build`
-2. Created a `.env` file with valid API credentials
-3. Valid API keys from your Optimizely instance
+1. Build the project: `npm run build`
+2. Configure `.env` file with valid API credentials
+3. Have valid API keys from your Optimizely instance

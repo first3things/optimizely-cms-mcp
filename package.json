@@ -14,6 +14,10 @@
     "test:tools:debug": "LOG_LEVEL=debug node scripts/quick-test.js",
     "check:credentials": "node scripts/diagnostics/check-credentials.mjs",
     "test:connection": "node scripts/diagnostics/test-connection.mjs",
+    "debug:graph": "node scripts/debug-graph.js",
+    "debug:auth": "node scripts/debug-auth-comprehensive.js",
+    "validate:key": "node scripts/validate-key.js",
+    "find:endpoint": "node scripts/find-graphql-endpoint.js",
     "lint": "eslint src/**/*.ts",
     "typecheck": "tsc --noEmit",
     "prepare": "npm run build"
