@@ -8,6 +8,7 @@ import type { ToolContext } from './types/tools.js';
 import type { Tool, ListToolsResult } from '@modelcontextprotocol/sdk/types.js';
 import { getGraphTools, registerGraphHandlers } from './tools/graph/register.js';
 import { getContentTools, registerContentHandlers } from './tools/content/register.js';
+import { getIntelligentTools, registerIntelligentHandlers } from './tools/intelligent/register.js';
 
 export async function registerAllTools(server: Server, config: Config): Promise<void> {
   const logger = getLogger();
@@ -48,7 +49,7 @@ export async function registerAllTools(server: Server, config: Config): Promise<
         properties: {
           category: {
             type: 'string',
-            enum: ['graph', 'content', 'assets', 'types', 'workflow', 'composite', 'utility'],
+            enum: ['graph', 'content', 'assets', 'types', 'workflow', 'composite', 'utility', 'intelligent'],
             description: 'Tool category to filter documentation'
           }
         },
@@ -61,7 +62,8 @@ export async function registerAllTools(server: Server, config: Config): Promise<
   const tools: Tool[] = [
     ...utilityTools,
     ...getGraphTools(),
-    ...getContentTools()
+    ...getContentTools(),
+    ...getIntelligentTools()
   ];
 
   // Create handler map
@@ -72,6 +74,9 @@ export async function registerAllTools(server: Server, config: Config): Promise<
   
   // Register content handlers
   registerContentHandlers(handlers);
+  
+  // Register intelligent handlers
+  registerIntelligentHandlers(handlers);
 
   // Register capabilities
   server.registerCapabilities({
@@ -209,7 +214,8 @@ async function handleGetDocumentation(params: { category?: string }, context: To
       types: 'Content type operations',
       workflow: 'Workflow management',
       composite: 'Complex multi-step operations',
-      utility: 'Helper and utility tools'
+      utility: 'Helper and utility tools',
+      intelligent: 'Smart content creation with parent discovery'
     }
   };
 
@@ -252,7 +258,13 @@ async function handleGetDocumentation(params: { category?: string }, context: To
       'workflow-get-status',
       'workflow-transition'
     ],
-    composite: [] // Will be added in Phase 5
+    composite: [], // Will be added in Phase 5
+    intelligent: [
+      'content_find_by_name',
+      'content_get_details', 
+      'content_create_under',
+      'content_creation_wizard'
+    ]
   };
 
   if (params.category) {

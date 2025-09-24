@@ -183,7 +183,7 @@ For other MCP-compatible clients, use the stdio transport configuration:
 }
 ```
 
-## Available Tools
+## Available Tools (38 Total)
 
 ### Utility Tools (3)
 - `test_connection` - Test connectivity to Optimizely APIs
@@ -228,6 +228,20 @@ For other MCP-compatible clients, use the stdio transport configuration:
 #### Workflows (2)
 - `workflow_get` - Get workflow status
 - `workflow_transition` - Change workflow state
+
+### Intelligent Content Tools (4)
+These tools combine GraphQL and CMA to provide smart content creation:
+
+- `content_find_by_name` - Find content by name (e.g., "Home", "News") to get IDs and GUIDs
+- `content_get_details` - Get full details including GUID for a specific content
+- `content_create_under` - Create content under a parent by name (e.g., "create under Home")
+- `content_creation_wizard` - Interactive wizard for guided content creation
+
+#### Example: Creating content under "Home"
+Instead of needing to know the Home page's GUID, you can now:
+1. Use `content_find_by_name` with "Home" to find the page
+2. Use `content_create_under` to create content directly under it
+3. Or use `content_creation_wizard` for a step-by-step process
 
 ## Development
 
