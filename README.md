@@ -130,19 +130,26 @@ notepad %APPDATA%\Claude\claude_desktop_config.json
   "mcpServers": {
     "optimizely": {
       "command": "node",
-      "args": ["C:\\Projects\\FTT\\CMS MCP\\optimizely-cms-mcp\\optimizely-cms-mcp\\dist\\index.js"],
+      "args": ["%USERPROFILE%\\path\\to\\optimizely-mcp-server\\dist\\index.js"],
       "env": {
+        "LOG_LEVEL": "error",
         "GRAPH_ENDPOINT": "https://cg.optimizely.com/content/v2",
         "GRAPH_AUTH_METHOD": "single_key",
         "GRAPH_SINGLE_KEY": "your-key",
         "CMA_BASE_URL": "https://api.cms.optimizely.com/preview3/experimental",
         "CMA_CLIENT_ID": "your-client-id",
-        "CMA_CLIENT_SECRET": "your-client-secret"
+        "CMA_CLIENT_SECRET": "your-client-secret",
+        "CMA_GRANT_TYPE": "client_credentials",
+        "CMA_TOKEN_ENDPOINT": "https://api.cms.optimizely.com/oauth/token"
       }
     }
   }
 }
 ```
+In JSON on Windows, you must use double backslashes (\\). If your folder path has spaces, this still works because each argument is a separate JSON string.
+
+- Windows: %USERPROFILE% expands to your home directory (e.g., C:\Users\Alice). If Claude doesn’t expand it automatically, replace it with your actual path (e.g., C:\\Users\\Alice\\path\\to\\optimizely-mcp-server\\dist\\index.js). In PowerShell, the equivalent is $env:USERPROFILE, but inside this JSON config you should keep %USERPROFILE% or use the full path.
+- macOS/Linux: the equivalent shortcut is ~ or $HOME (e.g., /Users/alice or /home/alice). If ~/$HOME isn’t expanded correctly, replace it with the full path.
 
 #### Step 3: Restart Claude Desktop
 
