@@ -55,8 +55,8 @@ export function getContentTools(): Tool[] {
     
     // Content CRUD Operations
     {
-      name: 'content-create',
-      description: 'Create new content items. IMPORTANT: Requires a container GUID. Use the Optimizely CMS admin to find valid container GUIDs.',
+      name: 'content_create',
+      description: 'Create new content items. IMPORTANT: Requires a container GUID. Use content_find_by_name to find parent pages or content_site_info for guidance.',
       inputSchema: {
         type: 'object',
         properties: {

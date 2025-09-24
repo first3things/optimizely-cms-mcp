@@ -126,10 +126,17 @@ export async function executeContentCreate(
       }
     } else {
       throw new ValidationError(
-        'A parent container is required for content creation. Please provide either:\n' +
-        '- "container": "<GUID>" (e.g., "12345678-1234-1234-1234-123456789012")\n' +
-        '- "parentId": "<GUID>"\n\n' +
-        'To find valid container GUIDs, check the Optimizely CMS admin interface or contact your administrator.'
+        'Content creation requires a parent container. You have several options:\n\n' +
+        '1. USE THE INTELLIGENT TOOL (Recommended):\n' +
+        '   Tool: content_create_under\n' +
+        '   Example: { "parentName": "Home", "contentType": "ArticlePage", "name": "my-article" }\n\n' +
+        '2. FIND THE PARENT FIRST:\n' +
+        '   Step 1: Use content_find_by_name with { "name": "Home" }\n' +
+        '   Step 2: Use the returned GUID as container\n\n' +
+        '3. PROVIDE A CONTAINER GUID:\n' +
+        '   - "container": "<GUID>" (e.g., "12345678-1234-1234-1234-123456789012")\n' +
+        '   - "parentId": "<GUID>"\n\n' +
+        'TIP: Use content_site_info for detailed guidance on content creation.'
       );
     }
     
