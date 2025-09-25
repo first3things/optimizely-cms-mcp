@@ -93,14 +93,14 @@ export function getIntelligentTools(): Tool[] {
     },
     {
       name: 'content_creation_wizard',
-      description: 'RECOMMENDED: Interactive wizard for content creation. Handles parent resolution, content type validation, and two-step creation process. Start with step="find-parent" and parentName="Home" (or desired parent).',
+      description: 'RECOMMENDED: Interactive wizard for content creation. Uses intelligent field analysis to populate required fields. Handles parent resolution, content type validation, and smart field population. Start with step="find-parent" and parentName="Home" (or desired parent).',
       inputSchema: {
         type: 'object',
         properties: {
           step: {
             type: 'string',
             description: 'Wizard step',
-            enum: ['start', 'find-parent', 'create-content']
+            enum: ['start', 'find-parent', 'preview-content', 'create-content']
           },
           parentName: {
             type: 'string',

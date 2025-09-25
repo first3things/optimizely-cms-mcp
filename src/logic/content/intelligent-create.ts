@@ -463,7 +463,8 @@ export async function executeContentWizard(
                     properties: {}
                   }
                 },
-                contentTypes: ['StandardPage', 'ArticlePage', 'NewsItem', 'BlogPost']
+                contentTypes: ['StandardPage', 'ArticlePage', 'NewsItem', 'BlogPost'],
+                tip: 'Consider using step="preview-content" first to see what fields will be populated'
               }, null, 2)
             }]
           };
@@ -493,6 +494,99 @@ export async function executeContentWizard(
                 }
               })),
               instruction: "Choose the correct parent by using the provided tool call"
+            }, null, 2)
+          }]
+        };
+        
+      case 'preview-content':
+        if (!stepParams.parentGuid || !stepParams.contentType || !stepParams.name) {
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                wizard: 'content-creation',
+                currentStep: 'preview-error',
+                error: 'Missing required parameters for preview',
+                required: {
+                  parentGuid: 'Parent GUID',
+                  contentType: 'Content type',
+                  name: 'Content name'
+                }
+              }, null, 2)
+            }]
+          };
+        }
+        
+        // Analyze and preview what will be created
+        const previewRegistry = AdapterRegistry.getInstance();
+        const previewAdapter = previewRegistry.getOptimizelyAdapter(cmaConfig);
+        const previewPopulator = new IntelligentFieldPopulator(previewAdapter);
+        
+        let previewSchema;
+        try {
+          previewSchema = await previewAdapter.getContentTypeSchema(stepParams.contentType);
+        } catch (error) {
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                wizard: 'content-creation',
+                currentStep: 'preview-error',
+                error: `Content type '${stepParams.contentType}' not found`
+              }, null, 2)
+            }]
+          };
+        }
+        
+        // Preview population
+        const previewContext = {
+          contentType: stepParams.contentType,
+          displayName: stepParams.displayName || stepParams.name,
+          properties: sanitizeInput(stepParams.properties) || {},
+          container: stepParams.parentGuid,
+          locale: stepParams.language || 'en'
+        };
+        
+        const previewResult = await previewPopulator.populateRequiredFields(previewContext);
+        
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              wizard: 'content-creation',
+              currentStep: 'preview',
+              preview: {
+                contentType: {
+                  name: previewSchema.name,
+                  displayName: previewSchema.displayName,
+                  baseType: previewSchema.baseType
+                },
+                willCreate: {
+                  name: stepParams.name,
+                  displayName: stepParams.displayName || stepParams.name,
+                  container: stepParams.parentGuid,
+                  parentName: stepParams.parentName
+                },
+                fields: {
+                  provided: Object.keys(stepParams.properties || {}),
+                  required: previewSchema.required,
+                  willPopulate: previewResult.suggestions.map((s: any) => ({
+                    field: s.field,
+                    reason: s.message,
+                    value: s.suggestedValue
+                  })),
+                  missing: previewResult.missingRequired
+                },
+                allFields: previewResult.populatedProperties
+              },
+              proceedToCreate: {
+                tool: 'content-wizard',
+                params: {
+                  ...stepParams,
+                  step: 'create-content'
+                }
+              },
+              modifyFirst: 'Update the properties in your params before proceeding'
             }, null, 2)
           }]
         };
