@@ -34,6 +34,7 @@ import {
   executeContentTypeDiscovery,
   executeSmartContentTypeMatch
 } from '../../logic/types/smart-discovery.js';
+import { contentTypeAnalyzerTool } from '../content-type-analyzer.js';
 
 export function getContentTools(): Tool[] {
   return [
@@ -469,6 +470,33 @@ export function getContentTools(): Tool[] {
       }
     },
     
+    // Content Type Analysis Tool
+    {
+      name: 'content_type_analyzer',
+      description: 'Analyze a content type to understand its requirements, fields, and smart defaults',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          contentType: {
+            type: 'string',
+            description: 'The content type to analyze'
+          },
+          includeExamples: {
+            type: 'boolean',
+            description: 'Include example values for fields',
+            default: true
+          },
+          includeInherited: {
+            type: 'boolean',
+            description: 'Include inherited properties from base types',
+            default: true
+          }
+        },
+        required: ['contentType'],
+        additionalProperties: false
+      }
+    },
+    
     // Workflow Tools
     {
       name: 'workflow-get-status',
@@ -612,6 +640,11 @@ export function registerContentHandlers(
   
   handlers.set('type-get-schema', async (params, context) => 
     executeTypeGetSchema(cmaConfig(context), params)
+  );
+  
+  // Content Type Analyzer
+  handlers.set('content_type_analyzer', async (params, context) => 
+    contentTypeAnalyzerTool.handler(params, context.config)
   );
   
   // Workflow handlers

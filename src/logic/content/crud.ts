@@ -8,7 +8,10 @@ import {
 import { handleError, ValidationError } from '../../utils/errors.js';
 import { validateInput, sanitizeInput } from '../../utils/validation.js';
 import { z } from 'zod';
-import { createContentShell, createLocalizedVersion } from '../../utils/api-helpers.js';
+// import { createContentShell, createLocalizedVersion } from '../../utils/api-helpers.js';
+import { AdapterRegistry } from '../../adapters/registry.js';
+import { IntelligentFieldPopulator } from './intelligent-populator.js';
+import { getLogger } from '../../utils/logger.js';
 
 // Validation schemas
 // Removed unused ContentReferenceSchema
@@ -113,6 +116,15 @@ export async function executeContentCreate(
       properties: validatedParams.properties ? sanitizeInput(validatedParams.properties) : {}
     };
     
+    // Ensure contentType is resolved before using it
+    const contentTypeStr = Array.isArray(validatedParams.contentType) 
+      ? validatedParams.contentType[0] 
+      : validatedParams.contentType;
+    
+    // Use intelligent field population instead of hard-coded logic
+    const logger = getLogger();
+    logger.debug('Using intelligent field population for content creation');
+    
     // FIX 1: Ensure contentType is a string, not an array or boolean
     if (validatedParams.contentType) {
       if (typeof validatedParams.contentType === 'boolean') {
@@ -186,6 +198,35 @@ export async function executeContentCreate(
       request.container = containerGuid;
     }
     
+    // Now that we have containerGuid, we can populate fields intelligently
+    const registry = AdapterRegistry.getInstance();
+    const adapter = registry.getOptimizelyAdapter(config);
+    const populator = new IntelligentFieldPopulator(adapter);
+    
+    const populationContext = {
+      contentType: contentTypeStr,
+      displayName: request.displayName,
+      properties: request.properties,
+      container: containerGuid,
+      locale: request.locale
+    };
+    
+    // Intelligently populate required fields
+    const populationResult = await populator.populateRequiredFields(populationContext);
+    
+    // Update request with populated properties
+    request.properties = populationResult.populatedProperties;
+    
+    // Log suggestions and warnings
+    if (populationResult.suggestions.length > 0) {
+      logger.info('Field population suggestions:', populationResult.suggestions);
+    }
+    
+    if (populationResult.missingRequired.length > 0) {
+      logger.warn('Missing required fields after population:', populationResult.missingRequired);
+      // Don't fail immediately - let the API validate
+    }
+    
     // For localized content types, locale must be in the body
     // Create content in a single step
     let result: any;
@@ -198,6 +239,24 @@ export async function executeContentCreate(
       // If creation fails with specific errors, we might need different approach
       // But for now, just throw the error
       throw error;
+    }
+    
+    // Record successful creation for pattern learning
+    if (result) {
+      try {
+        await populator.recordSuccess(
+          contentTypeStr,
+          request.properties,
+          {
+            container: containerGuid,
+            locale: request.locale,
+            displayName: request.displayName
+          }
+        );
+      } catch (recordError) {
+        // Don't fail the creation if recording fails
+        logger.warn('Failed to record pattern learning:', recordError);
+      }
     }
     
     return {
@@ -285,6 +344,12 @@ export async function executeContentUpdate(
     // Get existing content first to preserve properties
     const existing = await client.get<ContentItem>(endpoint);
     
+    // Use intelligent validation and transformation
+    const logger = getLogger();
+    const registry = AdapterRegistry.getInstance();
+    const adapter = registry.getOptimizelyAdapter(config);
+    const populator = new IntelligentFieldPopulator(adapter);
+    
     // API uses PATCH with merge-patch+json for updates
     const patchData: any = {};
     
@@ -293,10 +358,28 @@ export async function executeContentUpdate(
     }
     
     if (validatedParams.properties) {
-      patchData.properties = {
+      // Merge with existing properties
+      const mergedProperties = {
         ...existing.properties,
         ...sanitizeInput(validatedParams.properties)
       };
+      
+      // Validate and transform the updated content
+      const validationResult = await populator.validateAndTransform(
+        { ...existing, properties: mergedProperties },
+        existing.contentType[0],
+        'update'
+      );
+      
+      if (!validationResult.valid) {
+        logger.warn('Content validation warnings:', validationResult.errors);
+      }
+      
+      if (validationResult.warnings.length > 0) {
+        logger.info('Content validation suggestions:', validationResult.warnings);
+      }
+      
+      patchData.properties = validationResult.transformed.properties || mergedProperties;
     }
     
     // Use the patch method with proper content type
