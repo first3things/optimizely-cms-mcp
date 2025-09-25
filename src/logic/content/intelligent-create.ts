@@ -6,6 +6,8 @@ import { handleError, ValidationError } from '../../utils/errors.js';
 import { getLogger } from '../../utils/logger.js';
 import { z } from 'zod';
 import { validateInput, sanitizeInput } from '../../utils/validation.js';
+import { AdapterRegistry } from '../../adapters/registry.js';
+import { IntelligentFieldPopulator } from './intelligent-populator.js';
 
 // Safe JSON parser to handle non-JSON responses
 function safeJsonParse(text: string): { ok: boolean; data: any } {
@@ -532,20 +534,75 @@ export async function executeContentWizard(
                       Title: 'Welcome to My Page'
                     }
                   }
+                },
+                tip: 'Use content_type_analyzer to understand required fields for your content type'
+              }, null, 2)
+            }]
+          };
+        }
+        
+        // Use the intelligent system to analyze and populate fields
+        logger.info(`Content wizard: Analyzing content type ${stepParams.contentType}`);
+        
+        const registry = AdapterRegistry.getInstance();
+        const adapter = registry.getOptimizelyAdapter(cmaConfig);
+        const populator = new IntelligentFieldPopulator(adapter);
+        
+        // First, get the schema to understand required fields
+        let schema;
+        try {
+          schema = await adapter.getContentTypeSchema(stepParams.contentType);
+        } catch (error) {
+          return {
+            content: [{
+              type: 'text',
+              text: JSON.stringify({
+                wizard: 'content-creation',
+                currentStep: 'error',
+                error: `Content type '${stepParams.contentType}' not found`,
+                availableTypes: ['ArticlePage', 'StandardPage', 'BlogPost', 'NewsItem'],
+                retry: {
+                  tool: 'content-wizard',
+                  params: {
+                    ...stepParams,
+                    contentType: '<valid-type>'
+                  }
                 }
               }, null, 2)
             }]
           };
         }
         
-        // Create the content using the CRUD function to handle all complexity
+        // Prepare initial properties
+        const initialProperties = sanitizeInput(stepParams.properties) || {};
+        
+        // Use intelligent population to fill required fields
+        const populationContext = {
+          contentType: stepParams.contentType,
+          displayName: stepParams.displayName || stepParams.name,
+          properties: initialProperties,
+          container: stepParams.parentGuid,
+          locale: stepParams.language || 'en'
+        };
+        
+        const populationResult = await populator.populateRequiredFields(populationContext);
+        
+        // Show what fields were populated
+        if (populationResult.suggestions.length > 0 || populationResult.missingRequired.length > 0) {
+          logger.info('Content wizard field population:', {
+            suggestions: populationResult.suggestions,
+            missingRequired: populationResult.missingRequired
+          });
+        }
+        
+        // Create the content using the CRUD function with intelligently populated fields
         const createParams = {
           contentType: stepParams.contentType,
           name: sanitizeInput(stepParams.name) as string,
           displayName: stepParams.displayName || stepParams.name,
           container: stepParams.parentGuid,
           language: stepParams.language || 'en',
-          properties: sanitizeInput(stepParams.properties) || {}
+          properties: populationResult.populatedProperties
         };
         
         // Import and use the CRUD function
@@ -578,6 +635,9 @@ export async function executeContentWizard(
                 name: stepParams.parentName
               },
               message: result.message || `✅ Successfully created "${stepParams.name}" under "${stepParams.parentName}"!`,
+              fieldsPopulated: populationResult.suggestions.length > 0 ? 
+                populationResult.suggestions.map(s => `${s.field}: ${s.message}`) : 
+                ['All provided fields were used'],
               nextSteps: [
                 "You can now update the content properties",
                 "Publish the content when ready",
