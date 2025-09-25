@@ -6,6 +6,7 @@ A Model Context Protocol (MCP) server for Optimizely CMS, providing AI assistant
 
 - **GraphQL Integration**: Query content using Optimizely Graph API with multiple authentication methods
 - **Content Management**: Full CRUD operations via Content Management API (Preview3/Experimental)
+- **Intelligent Content Creation**: Automatically handles null values and finds parent pages by name
 - **Version Management**: Create, publish, and manage content versions
 - **Content Types**: Explore and understand content type schemas
 - **Workflow Support**: Manage content approval workflows
@@ -244,11 +245,19 @@ These tools combine GraphQL and CMA to provide smart content creation:
 - `content_create_under` - Create content under a parent by name (e.g., "create under Home")
 - `content_creation_wizard` - Interactive wizard for guided content creation
 
+#### Smart Content Creation
+The MCP server now intelligently handles content creation when Claude sends null values:
+
+1. **Automatic Parent Finding**: If no parent container is provided, it searches for common parent pages (Home, Start, Root)
+2. **Content Type Mapping**: Maps human-readable types like "article page" to actual types like "ArticlePage"
+3. **Graceful Fallbacks**: Falls back to "StandardPage" if the requested content type doesn't exist
+
 #### Example: Creating content under "Home"
 Instead of needing to know the Home page's GUID, you can now:
 1. Use `content_find_by_name` with "Home" to find the page
 2. Use `content_create_under` to create content directly under it
 3. Or use `content_creation_wizard` for a step-by-step process
+4. Even `content-create` now automatically handles null values intelligently!
 
 ## Development
 

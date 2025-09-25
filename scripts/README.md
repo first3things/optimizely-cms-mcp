@@ -1,40 +1,51 @@
-# Scripts Directory
+# Optimizely MCP Test Scripts
 
-This directory contains debugging utilities and testing tools for the Optimizely MCP Server.
+Clean, organized test scripts for the Optimizely MCP server.
 
-## Overview
+## Available Commands
 
-These scripts are **not** unit tests (which live in `/tests/`). Instead, they are interactive debugging tools and utilities for:
-- Testing API connectivity
-- Validating credentials
-- Debugging authentication issues
-- Manual testing of MCP tools
-
-## Available Scripts
-
-See [TESTING_SCRIPTS.md](TESTING_SCRIPTS.md) for detailed documentation of each script.
-
-### Quick Reference
-
+### Quick Testing
 ```bash
-# Test MCP tools
-npm run test:tools
-
-# Check credentials
-npm run check:credentials
-
-# Debug GraphQL connection
-npm run debug:graph
-
-# Validate API key
-npm run validate:key
-
-# Find GraphQL endpoint
-npm run find:endpoint
+npm run test:quick      # Fast connectivity check
+npm run test:all        # Run all test suites
 ```
+
+### API-Specific Tests
+```bash
+# Graph API
+npm run test:graph      # Run Graph API tests
+npm run test:graph:debug # With debug output
+
+# Content Management API  
+npm run test:cma        # Run CMA tests
+npm run test:cma:debug  # With debug output
+```
+
+### Environment Check
+```bash
+npm run check:env       # Validate environment variables
+```
+
+### Debug All Tests
+```bash
+npm run test:debug      # Run all tests with debug output
+```
+
+## Test Files
+
+- `test-quick.js` - Fast connectivity check for both APIs
+- `test-graph-api.js` - Comprehensive Graph API testing
+- `test-cma-api.js` - Comprehensive CMA testing
+- `test-all.js` - Runs all test suites
+- `debug-helpers.js` - Debug utilities (Windows compatible)
+- `diagnostics/check-credentials.mjs` - Environment validation
 
 ## Prerequisites
 
 1. Build the project: `npm run build`
-2. Configure `.env` file with valid API credentials
-3. Have valid API keys from your Optimizely instance
+2. Configure `.env` file with API credentials
+3. Have valid Optimizely API keys
+
+## See Also
+
+- [TEST_GUIDE.md](./TEST_GUIDE.md) - Detailed testing documentation

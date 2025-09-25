@@ -1,42 +1,38 @@
-# Diagnostic Scripts
+# Diagnostics Scripts
 
-These scripts help diagnose and troubleshoot connection issues with the Optimizely MCP Server.
+Environment and configuration validation tool.
 
 ## check-credentials.mjs
 
-Validates your API credentials and tests authentication.
+Validates that all required environment variables are set correctly.
 
-### Usage:
 ```bash
-npm run check:credentials
+npm run check:env
 ```
 
-### Features:
-- Shows loaded environment variables (safely masked)
-- Tests OAuth2 authentication for CMA
-- Generates curl commands for manual testing
-- Provides clear error messages if authentication fails
+### What it checks:
+- All required environment variables are present
+- API endpoints are properly formatted
+- Credentials are not empty
+- OAuth2 authentication for CMA
+- Configuration validity for both APIs
 
-## test-connection.mjs
+### Example Output
+```
+✅ GRAPH_ENDPOINT: Set
+✅ GRAPH_SINGLE_KEY: Set (32 chars)
+✅ CMA_BASE_URL: Set
+✅ CMA_CLIENT_ID: Set (32 chars)
+✅ CMA_CLIENT_SECRET: Set (hidden)
 
-Tests actual API connections through the MCP server.
+Testing CMA authentication...
+✅ OAuth2 authentication successful
 
-### Usage:
-```bash
-npm run test:connection
+All credentials are properly configured!
 ```
 
-### Features:
-- Tests health check functionality
-- Verifies API connectivity
-- Tests content retrieval
-- Shows detailed error messages
-
-## When to use these scripts:
-
-1. **After initial setup** - Verify your credentials are correct
-2. **When tools aren't returning content** - Check if APIs are accessible
-3. **After credential changes** - Ensure new keys work correctly
+### When to use:
+1. **After initial setup** - Verify credentials are correct
+2. **When tools fail** - Check if APIs are accessible
+3. **After credential changes** - Ensure new keys work
 4. **For troubleshooting** - Get detailed error information
-
-These diagnostic tools are part of the solution and should be committed to help future users troubleshoot issues.
