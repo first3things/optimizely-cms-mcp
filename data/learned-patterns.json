@@ -1,0 +1,31 @@
+{
+  "version": "1.0",
+  "lastUpdated": "2025-09-25T19:51:59.307Z",
+  "patterns": [
+    {
+      "contentType": "ArticlePage",
+      "fieldPath": "Title",
+      "successfulValues": []
+    },
+    {
+      "contentType": "ArticlePage",
+      "fieldPath": "Heading",
+      "successfulValues": []
+    },
+    {
+      "contentType": "ArticlePage",
+      "fieldPath": "SubHeading",
+      "successfulValues": []
+    },
+    {
+      "contentType": "ArticlePage",
+      "fieldPath": "Body",
+      "successfulValues": []
+    },
+    {
+      "contentType": "ArticlePage",
+      "fieldPath": "SeoSettings",
+      "successfulValues": []
+    }
+  ]
+}
