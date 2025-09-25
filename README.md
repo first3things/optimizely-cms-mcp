@@ -379,6 +379,12 @@ See [scripts/TESTING_SCRIPTS.md](scripts/TESTING_SCRIPTS.md) for detailed docume
    - Check Node.js version (>=18 required)
    - Clear `dist/` and rebuild
 
+4. **403 Forbidden Errors (Content Creation)**
+   - This typically means insufficient permissions
+   - See the Impersonation section below for a solution
+   - Verify the user has content creation rights
+   - Check the target container allows the content type
+
 ### Debug Mode
 
 Enable debug logging for troubleshooting:
@@ -395,6 +401,71 @@ Test server connectivity:
 # Using the built tool
 echo '{"method": "tools/call", "params": {"name": "health_check"}}' | node dist/index.js
 ```
+
+## User Impersonation
+
+If you encounter 403 Forbidden errors when creating content, you can use **user impersonation** to execute API calls as a specific user who has the necessary permissions.
+
+### When to Use Impersonation
+
+Use impersonation when:
+- The API client lacks content creation permissions
+- You need to test with different user permission levels
+- You want actions attributed to a specific user
+
+### Setup Instructions
+
+1. **Enable Impersonation in Optimizely CMS**:
+   - Log into Optimizely CMS as an administrator
+   - Navigate to **Settings > API Clients**
+   - Find your API client
+   - Enable the **"Allow impersonation"** option
+   - Save the changes
+
+2. **Configure the MCP Server**:
+   ```env
+   # In your .env file
+   CMA_IMPERSONATE_USER=user@example.com
+   ```
+
+3. **Update Claude Desktop Config** (if using environment variables):
+   ```json
+   {
+     "mcpServers": {
+       "optimizely": {
+         "env": {
+           "CMA_IMPERSONATE_USER": "user@example.com",
+           // ... other settings
+         }
+       }
+     }
+   }
+   ```
+
+### How It Works
+
+When impersonation is configured:
+- Authentication requests use JSON format with `act_as` field
+- All content operations execute as the impersonated user
+- Created content shows the impersonated user as the author
+
+### Testing Impersonation
+
+Test that impersonation is working:
+
+```bash
+# Run the impersonation test script
+node scripts/test-impersonation-final.js
+```
+
+This will create test content and show which user created it.
+
+### Security Best Practices
+
+- Only enable impersonation when necessary
+- Use accounts with minimal required permissions
+- Regularly review API client permissions
+- Monitor API usage logs for unusual activity
 
 ## Contributing
 
