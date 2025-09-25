@@ -93,7 +93,7 @@ export function getIntelligentTools(): Tool[] {
     },
     {
       name: 'content_creation_wizard',
-      description: 'Interactive wizard for guided content creation',
+      description: 'RECOMMENDED: Interactive wizard for content creation. Handles parent resolution, content type validation, and two-step creation process. Start with step="find-parent" and parentName="Home" (or desired parent).',
       inputSchema: {
         type: 'object',
         properties: {

@@ -60,7 +60,7 @@ export function getContentTools(): Tool[] {
     // Content CRUD Operations
     {
       name: 'content-create',
-      description: 'Create new content items. IMPORTANT: Requires a container GUID. Use content_find_by_name to find parent pages or content_site_info for guidance.',
+      description: 'Create new content items. WARNING: Direct creation often fails. STRONGLY RECOMMEND using content_creation_wizard instead for guided creation with proper validation. Requires: container GUID, valid contentType, and all required properties.',
       inputSchema: {
         type: 'object',
         properties: {

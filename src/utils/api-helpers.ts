@@ -47,13 +47,23 @@ export async function createContentShell(opts: {
   container?: string;      // parent key (GUID) if creating under a container
   baseProps?: Record<string, any>;
 }): Promise<any> {
-  const { token, displayName, contentType, container, baseProps } = opts;
-  const body = {
+  const { token, displayName, contentType, container, baseProps = {} } = opts;
+  const body: any = {
     displayName,
-    contentType,           // must be string
-    ...(container ? { container } : {}),
-    ...(baseProps ? { properties: baseProps } : {}),
+    contentType,           // must be string like "ArticlePage"
   };
+  
+  // Only add container if provided
+  if (container) {
+    body.container = container;
+  }
+  
+  // Add base properties if provided (like SeoSettings)
+  if (Object.keys(baseProps).length > 0) {
+    body.properties = baseProps;
+  }
+  
+  // Step A: Create content shell WITHOUT locale
   const r = await fetch(`${BASE}/experimental/content`, {
     method: "POST",
     headers: authHeaders(token),

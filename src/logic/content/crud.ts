@@ -105,26 +105,30 @@ export async function executeContentCreate(
     
     // Prepare the request according to CMA API specification
     const request: any = {
-      // REQUIRED: displayName (map from name parameter)
+      // REQUIRED: displayName only (not name)
       displayName: validatedParams.displayName || validatedParams.name,
-      properties: {}
+      // REQUIRED: contentType as string
+      contentType: '',
+      // Optional properties
+      properties: validatedParams.properties ? sanitizeInput(validatedParams.properties) : {}
     };
     
-    // FIX 1: contentType should be a string, not an array
+    // FIX 1: Ensure contentType is a string, not an array or boolean
     if (validatedParams.contentType) {
+      if (typeof validatedParams.contentType === 'boolean') {
+        throw new ValidationError('contentType must be a string (e.g., "ArticlePage"), not a boolean');
+      }
       const contentType = Array.isArray(validatedParams.contentType) 
         ? validatedParams.contentType[0] 
         : validatedParams.contentType;
-      request.contentType = contentType; // Must be string like "ArticlePage"
-    }
-
-    // Handle properties - merge with any provided properties
-    if (validatedParams.properties) {
-      request.properties = sanitizeInput(validatedParams.properties);
+      request.contentType = String(contentType); // Ensure it's a string
+    } else {
+      throw new ValidationError('contentType is required');
     }
     
-    // Set other required fields from the API spec
-    request.status = 'draft'; // New content starts as draft
+    // DO NOT include 'name' in the request - API only accepts displayName
+    // For localized content types, locale MUST be in the body
+    request.locale = validatedParams.language || 'en';
     
     // FIX 2: Container must be a valid existing content key (GUID)
     let containerGuid: string | undefined;
@@ -182,56 +186,18 @@ export async function executeContentCreate(
       request.container = containerGuid;
     }
     
-    // Implement two-step content creation for localized content types
+    // For localized content types, locale must be in the body
+    // Create content in a single step
     let result: any;
     
     try {
-      // Get the token from the client config
-      const token = await client.getAccessToken();
-      
-      // Step 1: Create content shell (always without locale)
-      const shellResult = await createContentShell({
-        token,
-        displayName: request.displayName,
-        contentType: request.contentType as string, // Ensure it's a string
-        container: request.container,
-        baseProps: {} // Don't include properties in shell
-      });
-      
-      // Get the content key from the shell result
-      const contentKey = shellResult.key || shellResult.metadata?.key || shellResult._metadata?.key;
-      if (!contentKey) {
-        throw new Error('Failed to get content key from shell creation');
-      }
-      
-      // Step 2: Create localized version with properties
-      const locale = validatedParams.language || 'en';
-      result = await createLocalizedVersion({
-        token,
-        key: contentKey,
-        displayName: request.displayName,
-        locale,
-        status: 'draft',
-        properties: request.properties || {}
-      });
+      // Single-step creation with locale in body
+      result = await client.post<ContentItem>('/experimental/content', request);
       
     } catch (error: any) {
-      // If the error suggests single-step creation might work (non-localized type)
-      // Try the original single-step approach
-      if (error.message?.includes('version already exists') || 
-          error.message?.includes('not a localized content type')) {
-        try {
-          let endpoint = '/experimental/content';
-          if (validatedParams.language) {
-            endpoint += `?locale=${encodeURIComponent(validatedParams.language)}`;
-          }
-          result = await client.post<ContentItem>(endpoint, request);
-        } catch (fallbackError: any) {
-          throw error; // Throw the original error
-        }
-      } else {
-        throw error;
-      }
+      // If creation fails with specific errors, we might need different approach
+      // But for now, just throw the error
+      throw error;
     }
     
     return {
