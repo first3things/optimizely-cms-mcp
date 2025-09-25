@@ -10,7 +10,7 @@
 
 import { config } from 'dotenv';
 import { OptimizelyGraphClient } from '../dist/clients/graph-client.js';
-import { getGraphConfig } from '../dist/config.js';
+import { getConfig, getGraphConfig } from '../dist/config.js';
 
 config();
 
@@ -49,16 +49,20 @@ async function testGraphAPI() {
   };
 
   try {
+    // Check for Graph API credentials
+    if (!process.env.GRAPH_SINGLE_KEY && (!process.env.GRAPH_APP_KEY || !process.env.GRAPH_SECRET)) {
+      console.log(`\n${colors.red}Missing Graph API credentials${colors.reset}`);
+      console.log('Please configure one of the following in your .env file:');
+      console.log('- GRAPH_SINGLE_KEY (for single key auth)');
+      console.log('- GRAPH_APP_KEY and GRAPH_SECRET (for HMAC auth)');
+      console.log('');
+      console.log('You can find these in your Optimizely Graph admin panel.');
+      return;
+    }
+
     // Initialize Graph client
-    const graphConfig = getGraphConfig({ 
-      graph: {
-        singleKey: process.env.GRAPH_SINGLE_KEY,
-        appKey: process.env.GRAPH_APP_KEY,
-        secret: process.env.GRAPH_SECRET,
-        endpoint: process.env.GRAPH_ENDPOINT
-      },
-      options: {}
-    });
+    const fullConfig = getConfig();
+    const graphConfig = getGraphConfig(fullConfig);
 
     log.debug(`Endpoint: ${graphConfig.endpoint}`);
     log.debug(`Auth type: ${graphConfig.auth.type}`);
@@ -78,7 +82,7 @@ async function testGraphAPI() {
       `;
       
       log.debug('Executing test query...');
-      const result = await client.request(testQuery);
+      const result = await client.query(testQuery);
       
       if (result._Content) {
         log.success('Graph API connection successful');
@@ -110,7 +114,7 @@ async function testGraphAPI() {
         }
       `;
       
-      const result = await client.request(typeQuery);
+      const result = await client.query(typeQuery);
       
       if (result._Content?.items) {
         const types = new Set();
@@ -160,7 +164,7 @@ async function testGraphAPI() {
         }
       `;
       
-      const result = await client.request(searchQuery);
+      const result = await client.query(searchQuery);
       
       if (result._Content?.items && result._Content.items.length > 0) {
         log.success(`Found ${result._Content.items.length} items containing "Home"`);
@@ -192,7 +196,7 @@ async function testGraphAPI() {
         }
       `;
       
-      const result = await client.request(introspectionQuery);
+      const result = await client.query(introspectionQuery);
       
       if (result.__schema?.types) {
         const contentTypes = result.__schema.types.filter(t => 

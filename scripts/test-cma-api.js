@@ -10,7 +10,7 @@
 
 import { config } from 'dotenv';
 import { OptimizelyContentClient } from '../dist/clients/cma-client.js';
-import { getCMAConfig } from '../dist/config.js';
+import { getConfig, getCMAConfig } from '../dist/config.js';
 
 config();
 
@@ -50,16 +50,8 @@ async function testCMAAPI() {
 
   try {
     // Initialize CMA client
-    const cmaConfig = getCMAConfig({ 
-      cma: {
-        baseUrl: process.env.CMA_BASE_URL,
-        clientId: process.env.CMA_CLIENT_ID,
-        clientSecret: process.env.CMA_CLIENT_SECRET,
-        grantType: process.env.CMA_GRANT_TYPE,
-        tokenEndpoint: process.env.CMA_TOKEN_ENDPOINT
-      },
-      options: {}
-    });
+    const fullConfig = getConfig();
+    const cmaConfig = getCMAConfig(fullConfig);
 
     log.debug(`Base URL: ${cmaConfig.baseUrl}`);
     log.debug(`Client ID: ***${cmaConfig.clientId.slice(-4)}`);
