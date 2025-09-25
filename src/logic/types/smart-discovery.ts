@@ -27,8 +27,9 @@ export async function executeContentTypeDiscovery(
     
     logger.info('Discovering content types', { suggestedType: params.suggestedType });
     
-    // Get all content types
-    const contentTypes = await client.get('/contenttypes');
+    // Get all content types - the preview3 API returns paginated results
+    const response = await client.get('/contentTypes');
+    const contentTypes = response.items || [];
     
     // If a suggested type is provided, try to find matches
     if (params.suggestedType) {
@@ -40,7 +41,7 @@ export async function executeContentTypeDiscovery(
         if (suggested.includes(key)) {
           for (const pattern of patterns) {
             const found = contentTypes.find(ct => 
-              ct.name?.toLowerCase() === pattern.toLowerCase() ||
+              ct.key?.toLowerCase() === pattern.toLowerCase() ||
               ct.displayName?.toLowerCase() === pattern.toLowerCase()
             );
             if (found) {
@@ -52,7 +53,7 @@ export async function executeContentTypeDiscovery(
       
       // Also check direct matches
       const directMatch = contentTypes.find(ct => 
-        ct.name?.toLowerCase().includes(suggested) ||
+        ct.key?.toLowerCase().includes(suggested) ||
         ct.displayName?.toLowerCase().includes(suggested)
       );
       if (directMatch && !matches.includes(directMatch)) {
@@ -67,13 +68,13 @@ export async function executeContentTypeDiscovery(
               success: true,
               suggestedType: params.suggestedType,
               matches: matches.map(ct => ({
-                name: ct.name,
+                name: ct.key,
                 displayName: ct.displayName,
                 description: ct.description,
                 baseType: ct.baseType
               })),
-              recommendation: matches[0].name,
-              message: `Found ${matches.length} content type(s) matching "${params.suggestedType}". Recommended: ${matches[0].name}`
+              recommendation: matches[0].key,
+              message: `Found ${matches.length} content type(s) matching "${params.suggestedType}". Recommended: ${matches[0].key}`
             }, null, 2)
           }]
         };
@@ -82,14 +83,14 @@ export async function executeContentTypeDiscovery(
     
     // Return all content types
     const pageTypes = contentTypes.filter(ct => 
-      ct.baseType === 'Page' || 
-      ct.name?.includes('Page') ||
+      ct.baseType === '_page' || 
+      ct.key?.includes('Page') ||
       ct.displayName?.includes('Page')
     );
     
     const blockTypes = contentTypes.filter(ct => 
-      ct.baseType === 'Block' || 
-      ct.name?.includes('Block') ||
+      ct.baseType === '_component' || 
+      ct.key?.includes('Block') ||
       ct.displayName?.includes('Block')
     );
     
@@ -109,12 +110,12 @@ export async function executeContentTypeDiscovery(
             other: otherTypes.length
           },
           pageTypes: pageTypes.map(ct => ({
-            name: ct.name,
+            name: ct.key,
             displayName: ct.displayName,
             description: params.includeDescriptions ? ct.description : undefined
           })),
           blockTypes: blockTypes.map(ct => ({
-            name: ct.name,
+            name: ct.key,
             displayName: ct.displayName,
             description: params.includeDescriptions ? ct.description : undefined
           })),
@@ -148,13 +149,14 @@ export async function executeSmartContentTypeMatch(
       .replace(/\s+/g, '')
       .replace(/[^a-z]/g, '');
     
-    // Get all content types
-    const contentTypes = await client.get('/contenttypes');
+    // Get all content types - the preview3 API returns paginated results
+    const response = await client.get('/contentTypes');
+    const contentTypes = response.items || [];
     
     // Score each content type
     const scores = contentTypes.map(ct => {
       let score = 0;
-      const ctName = ct.name?.toLowerCase() || '';
+      const ctName = ct.key?.toLowerCase() || '';
       const ctDisplay = ct.displayName?.toLowerCase() || '';
       
       // Exact match
@@ -167,7 +169,7 @@ export async function executeSmartContentTypeMatch(
       
       // Pattern match
       for (const [key, patterns] of Object.entries(CONTENT_TYPE_PATTERNS)) {
-        if (normalized.includes(key) && patterns.includes(ct.name)) {
+        if (normalized.includes(key) && patterns.includes(ct.key)) {
           score += 30;
         }
       }
@@ -193,7 +195,7 @@ export async function executeSmartContentTypeMatch(
     if (topMatches.length === 0) {
       // No matches found, suggest common types
       const commonTypes = contentTypes.filter(ct => 
-        ['StandardPage', 'ArticlePage', 'Page', 'BlogPost'].includes(ct.name)
+        ['StandardPage', 'ArticlePage', 'Page', 'BlogPost'].includes(ct.key)
       );
       
       return {
@@ -204,7 +206,7 @@ export async function executeSmartContentTypeMatch(
             requestedType: params.requestedType,
             message: `No content types found matching "${params.requestedType}"`,
             suggestions: commonTypes.map(ct => ({
-              name: ct.name,
+              name: ct.key,
               displayName: ct.displayName,
               reason: 'Common content type'
             })),
@@ -221,19 +223,19 @@ export async function executeSmartContentTypeMatch(
           success: true,
           requestedType: params.requestedType,
           bestMatch: {
-            name: topMatches[0].contentType.name,
+            name: topMatches[0].contentType.key,
             displayName: topMatches[0].contentType.displayName,
             confidence: Math.min(topMatches[0].score, 100) + '%'
           },
           alternatives: topMatches.slice(1).map(match => ({
-            name: match.contentType.name,
+            name: match.contentType.key,
             displayName: match.contentType.displayName,
             confidence: Math.min(match.score, 100) + '%'
           })),
-          recommendation: topMatches[0].contentType.name,
+          recommendation: topMatches[0].contentType.key,
           message: topMatches[0].score >= 90 
-            ? `High confidence match: ${topMatches[0].contentType.name}`
-            : `Best match found: ${topMatches[0].contentType.name}. Consider confirming with the user.`
+            ? `High confidence match: ${topMatches[0].contentType.key}`
+            : `Best match found: ${topMatches[0].contentType.key}. Consider confirming with the user.`
         }, null, 2)
       }]
     };

@@ -87,7 +87,7 @@ export async function executeTestContentApi(
     // Test known endpoints
     const testEndpoints = [
       { path: '/content', method: 'POST', description: 'Content creation endpoint' },
-      { path: '/contenttypes', method: 'GET', description: 'List content types' },
+      { path: '/contentTypes', method: 'GET', description: 'List content types' },
       { path: '/languages', method: 'GET', description: 'List languages' }
     ];
     

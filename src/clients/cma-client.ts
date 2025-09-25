@@ -263,4 +263,13 @@ export class OptimizelyContentClient {
     }
     return path;
   }
+
+  // Get access token for direct API calls
+  async getAccessToken(): Promise<string> {
+    await this.ensureAuthenticated();
+    if (!this.accessToken) {
+      throw new AuthenticationError('No access token available');
+    }
+    return this.accessToken;
+  }
 }

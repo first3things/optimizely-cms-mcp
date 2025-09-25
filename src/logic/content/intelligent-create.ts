@@ -7,6 +7,15 @@ import { getLogger } from '../../utils/logger.js';
 import { z } from 'zod';
 import { validateInput, sanitizeInput } from '../../utils/validation.js';
 
+// Safe JSON parser to handle non-JSON responses
+function safeJsonParse(text: string): { ok: boolean; data: any } {
+  try {
+    return { ok: true, data: JSON.parse(text) };
+  } catch {
+    return { ok: false, data: text };
+  }
+}
+
 const logger = getLogger();
 
 // Schema for finding content by name
@@ -27,15 +36,7 @@ const IntelligentCreateSchema = z.object({
   autoConfirm: z.boolean().optional().default(false)
 });
 
-interface ContentSearchResult {
-  id: number;
-  guid: string;
-  name: string;
-  path: string;
-  contentType: string;
-  language?: string;
-  url?: string;
-}
+// Removed unused interface ContentSearchResult
 
 export async function executeFindContentByName(
   graphConfig: GraphConfig,
@@ -45,49 +46,31 @@ export async function executeFindContentByName(
     const validatedParams = validateInput(FindContentByNameSchema, params);
     const client = new OptimizelyGraphClient(graphConfig);
     
-    // Build GraphQL query to search by name
+    // Build GraphQL query to search by name - using actual schema fields
     const query = `
       query FindByName($searchText: String!, $limit: Int) {
-        Content(
+        _Content(
           where: { 
-            _or: [
-              { Name: { contains: $searchText } }
-              { DisplayName: { contains: $searchText } }
-            ]
-            ${validatedParams.contentType ? `ContentType: { eq: "${validatedParams.contentType}" }` : ''}
+            _metadata: { 
+              displayName: { contains: $searchText }
+              ${validatedParams.contentType ? `types: { contains: "${validatedParams.contentType}" }` : ''}
+            }
           }
           limit: $limit
-          orderBy: { Name: ASC }
+          orderBy: { _metadata: { displayName: ASC } }
         ) {
           items {
-            ContentLink {
-              Id
-              GuidValue
-            }
-            Name
-            DisplayName
-            ContentType
-            Language {
-              Name
-              DisplayName
-            }
-            Url
-            RelativePath
-            ParentLink {
-              Id
-              GuidValue
-            }
-            ... on IContent {
-              ParentLink {
-                Id
-                GuidValue
+            _metadata {
+              key
+              displayName
+              types
+              locale
+              url {
+                hierarchical
               }
-              Ancestors {
-                Name
-                ContentLink {
-                  Id
-                }
-              }
+              status
+              created
+              lastModified
             }
           }
           total
@@ -100,20 +83,21 @@ export async function executeFindContentByName(
       limit: validatedParams.limit
     });
     
-    const items = result.Content?.items || [];
-    const total = result.Content?.total || 0;
+    const items = result._Content?.items || [];
+    const total = result._Content?.total || 0;
     
     // Format results for easier use
     const formattedResults = items.map((item: any) => ({
-      id: item.ContentLink?.Id,
-      guid: item.ContentLink?.GuidValue,
-      name: item.Name || item.DisplayName,
-      displayName: item.DisplayName,
-      contentType: item.ContentType?.[0] || item.ContentType,
-      language: item.Language?.Name,
-      url: item.Url,
-      path: item.RelativePath || item.Ancestors?.map((a: any) => a.Name).join(' > '),
-      parentGuid: item.ParentLink?.GuidValue
+      guid: item._metadata?.key,
+      name: item._metadata?.displayName,
+      displayName: item._metadata?.displayName,
+      contentType: item._metadata?.types?.[0] || (Array.isArray(item._metadata?.types) ? item._metadata?.types.join(', ') : item._metadata?.types),
+      language: item._metadata?.locale,
+      url: item._metadata?.url?.hierarchical,
+      path: item._metadata?.url?.hierarchical,
+      status: item._metadata?.status,
+      created: item._metadata?.created,
+      lastModified: item._metadata?.lastModified
     }));
     
     return {
@@ -146,52 +130,33 @@ export async function executeGetContentWithDetails(
     
     const client = new OptimizelyGraphClient(graphConfig);
     
-    // Query to get full content details including GUID
+    // Query to get full content details including GUID - using actual schema
     const query = `
-      query GetContentDetails($id: Int!) {
-        Content(where: { ContentLink: { Id: { eq: $id } } }) {
+      query GetContentDetails($id: String!) {
+        _Content(where: { 
+          _metadata: { key: { eq: $id } }
+        }) {
           items {
-            ContentLink {
-              Id
-              GuidValue
-            }
-            Name
-            DisplayName
-            ContentType
-            Language {
-              Name
-              DisplayName
-            }
-            Url
-            RelativePath
-            ParentLink {
-              Id
-              GuidValue
-            }
-            ... on IContent {
-              Ancestors {
-                Name
-                DisplayName
-                ContentLink {
-                  Id
-                  GuidValue
-                }
+            _metadata {
+              key
+              displayName
+              types
+              locale
+              url {
+                hierarchical
               }
-              Children {
-                Name
-                ContentType
-                ContentLink {
-                  Id
-                }
-              }
+              status
+              created
+              lastModified
+              sortOrder
             }
           }
         }
       }
     `;
     
-    const result = await client.query<any>(query, { id: parseInt(contentId.toString()) });
-    const content = result.Content?.items?.[0];
+    const result = await client.query<any>(query, { id: contentId.toString() });
+    const content = result._Content?.items?.[0];
     
     if (!content) {
       throw new ValidationError(`Content with ID ${contentId} not found`);
@@ -203,19 +168,19 @@ export async function executeGetContentWithDetails(
         text: JSON.stringify({
           success: true,
           content: {
-            id: content.ContentLink?.Id,
-            guid: content.ContentLink?.GuidValue,
-            name: content.Name,
-            displayName: content.DisplayName,
-            contentType: content.ContentType?.[0] || content.ContentType,
-            language: content.Language?.Name,
-            url: content.Url,
-            path: content.Ancestors?.map((a: any) => a.Name).join(' > '),
-            parentGuid: content.ParentLink?.GuidValue,
-            hasChildren: content.Children?.length > 0,
-            childCount: content.Children?.length || 0
+            guid: content._metadata?.key,
+            name: content._metadata?.displayName,
+            displayName: content._metadata?.displayName,
+            contentType: content._metadata?.types?.[0] || content._metadata?.types,
+            language: content._metadata?.locale,
+            url: content._metadata?.url?.hierarchical,
+            path: content._metadata?.url?.hierarchical,
+            status: content._metadata?.status,
+            created: content._metadata?.created,
+            lastModified: content._metadata?.lastModified,
+            sortOrder: content._metadata?.sortOrder
           },
-          message: `Retrieved details for "${content.Name}" (GUID: ${content.ContentLink?.GuidValue})`
+          message: `Retrieved details for "${content._metadata?.displayName}" (GUID: ${content._metadata?.key})`
         }, null, 2)
       }]
     };
@@ -236,30 +201,34 @@ export async function executeIntelligentCreate(
     
     logger.info('Starting intelligent content creation', { parentName: validatedParams.parentName });
     
-    // Step 1: Find the parent content by name
+    // Step 1: Find the parent content by name - using _Content
     const searchQuery = `
       query FindParent($name: String!) {
-        Content(
+        _Content(
           where: { 
             _or: [
               { Name: { eq: $name } }
-              { DisplayName: { eq: $name } }
+              { _metadata: { displayName: { eq: $name } } }
               { Name: { contains: $name } }
             ]
           }
           limit: 5
         ) {
           items {
+            _metadata {
+              key
+              displayName
+              contentType
+            }
             ContentLink {
               Id
               GuidValue
             }
             Name
-            DisplayName
             ContentType
             Url
             RelativePath
-            ... on IContent {
+            ... on _IContent {
               Ancestors {
                 Name
               }
@@ -271,7 +240,7 @@ export async function executeIntelligentCreate(
     `;
     
     const searchResult = await graphClient.query<any>(searchQuery, { name: validatedParams.parentName });
-    const candidates = searchResult.Content?.items || [];
+    const candidates = searchResult._Content?.items || [];
     
     if (candidates.length === 0) {
       return {
@@ -297,9 +266,9 @@ export async function executeIntelligentCreate(
             message: `Found ${candidates.length} items matching "${validatedParams.parentName}". Please be more specific:`,
             options: candidates.map((item: any) => ({
               id: item.ContentLink.Id,
-              guid: item.ContentLink.GuidValue,
+              guid: item._metadata?.key || item.ContentLink.GuidValue,
               name: item.Name,
-              displayName: item.DisplayName,
+              displayName: item._metadata?.displayName || item.Name,
               path: item.Ancestors?.map((a: any) => a.Name).join(' > ') || '/',
               contentType: item.ContentType?.[0] || item.ContentType
             })),
@@ -311,7 +280,7 @@ export async function executeIntelligentCreate(
     
     // Use the first (or only) match
     const parent = candidates[0];
-    const parentGuid = parent.ContentLink.GuidValue;
+    const parentGuid = parent._metadata?.key || parent.ContentLink.GuidValue;
     const parentPath = parent.Ancestors?.map((a: any) => a.Name).join(' > ') || '/';
     
     // Step 2: Create the content under the found parent
@@ -404,13 +373,39 @@ export async function executeContentWizard(
         }
         
         // Search for parent
-        const searchResult = await executeFindContentByName(graphConfig, {
-          name: stepParams.parentName,
-          limit: 5
-        });
+        let searchResult;
+        try {
+          searchResult = await executeFindContentByName(graphConfig, {
+            name: stepParams.parentName,
+            limit: 5
+          });
+        } catch (error) {
+          // Handle upstream errors
+          return {
+            isError: true,
+            content: [
+              { type: 'text', text: 'Content wizard failed while finding parent.' },
+              { type: 'text', text: `Error: ${(error as any).message || error}` }
+            ]
+          };
+        }
         
-        // Parse the result to provide next steps
-        const searchData = JSON.parse((searchResult as any).content[0].text);
+        // Parse the result with safe parser
+        const searchResultText = (searchResult as any).content?.[0]?.text || '';
+        const searchParsed = safeJsonParse(searchResultText);
+        
+        if (!searchParsed.ok) {
+          // Return structured MCP error
+          return {
+            isError: true,
+            content: [
+              { type: 'text', text: 'Content wizard failed while finding parent.' },
+              { type: 'text', text: typeof searchParsed.data === 'string' ? searchParsed.data : JSON.stringify(searchParsed.data) }
+            ]
+          };
+        }
+        
+        const searchData = searchParsed.data;
         
         if (searchData.total === 0) {
           return {
@@ -543,8 +538,8 @@ export async function executeContentWizard(
           };
         }
         
-        // Create the content
-        const createRequest = {
+        // Create the content using the CRUD function to handle all complexity
+        const createParams = {
           contentType: stepParams.contentType,
           name: sanitizeInput(stepParams.name) as string,
           displayName: stepParams.displayName || stepParams.name,
@@ -553,8 +548,19 @@ export async function executeContentWizard(
           properties: sanitizeInput(stepParams.properties) || {}
         };
         
-        const cmaClient = new OptimizelyContentClient(cmaConfig);
-        const result = await cmaClient.post('/content', createRequest);
+        // Import and use the CRUD function
+        const { executeContentCreate } = await import('./crud.js');
+        const createResult = await executeContentCreate(cmaConfig, createParams);
+        
+        // Check if creation failed
+        if (createResult.isError) {
+          return createResult; // Return the structured error
+        }
+        
+        // Parse the success result
+        const createResultText = (createResult.content?.[0] as any)?.text || '{}';
+        const createParsed = safeJsonParse(createResultText);
+        const result = createParsed.ok ? createParsed.data : { success: true, content: {} };
         
         return {
           content: [{
@@ -563,17 +569,15 @@ export async function executeContentWizard(
               wizard: 'content-creation',
               currentStep: 'complete',
               success: true,
-              created: {
-                id: result.contentLink?.id,
-                guid: result.contentLink?.guidValue,
-                name: result.name,
-                displayName: result.displayName
+              created: result.content || {
+                name: stepParams.name,
+                displayName: stepParams.displayName || stepParams.name
               },
               parent: {
                 guid: stepParams.parentGuid,
                 name: stepParams.parentName
               },
-              message: `✅ Successfully created "${stepParams.name}" under "${stepParams.parentName}"!`,
+              message: result.message || `✅ Successfully created "${stepParams.name}" under "${stepParams.parentName}"!`,
               nextSteps: [
                 "You can now update the content properties",
                 "Publish the content when ready",
@@ -586,7 +590,15 @@ export async function executeContentWizard(
       default:
         throw new ValidationError(`Unknown wizard step: ${step}`);
     }
-  } catch (error) {
-    return handleError(error);
+  } catch (error: any) {
+    // Return structured MCP error for wizard
+    return {
+      isError: true,
+      content: [
+        { type: 'text', text: 'Content wizard encountered an error.' },
+        { type: 'text', text: `Step: ${params.step || 'unknown'}` },
+        { type: 'text', text: `Error: ${error.message || error}` }
+      ]
+    };
   }
 }

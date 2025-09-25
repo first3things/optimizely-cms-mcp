@@ -95,21 +95,15 @@ export async function executeGraphGetContentByPath(
     
     const fieldsSelection = params.fields 
       ? params.fields.join('\n          ')
-      : `
-          name
-          contentLink {
-            id
-            guidValue
-          }
-        `;
+      : '';
 
     const query = `
-      query GetContentByPath($path: String!, $locale: String) {
-        content: content(
+      query GetContentByPath($path: String!) {
+        content: _Content(
           where: { 
             _metadata: { 
               url: { hierarchical: { eq: $path } }
-              ${params.locale ? 'locale: { eq: $locale }' : ''}
+              locale: { eq: "en" }
             }
           }
           limit: 1
@@ -119,21 +113,20 @@ export async function executeGraphGetContentByPath(
               key
               locale
               displayName
-              contentType
+              types
               url {
                 base
                 hierarchical
               }
-            }
-            ${fieldsSelection}
+            }${fieldsSelection ? `
+            ${fieldsSelection}` : ''}
           }
         }
       }
     `;
 
     const variables = {
-      path: normalizedPath,
-      locale: params.locale
+      path: normalizedPath
     };
 
     const result = await client.query(query, variables, {
@@ -182,7 +175,7 @@ export async function executeGraphGetRelated(
     
     const query = direction === 'outgoing' ? `
       query GetOutgoingRelations($contentId: String!, $limit: Int) {
-        content: content(
+        content: _Content(
           where: { 
             _or: [
               { _metadata: { key: { eq: $contentId } } }
@@ -200,9 +193,9 @@ export async function executeGraphGetRelated(
               _metadata {
                 key
                 displayName
-                contentType
+                types
               }
-              ... on IContent {
+              ... on _IContent {
                 name
                 contentLink {
                   id
@@ -215,7 +208,7 @@ export async function executeGraphGetRelated(
       }
     ` : `
       query GetIncomingRelations($contentId: String!, $limit: Int) {
-        content: queryContent(
+        content: _Content(
           where: {
             _references: {
               _metadata: { key: { eq: $contentId } }
@@ -227,9 +220,9 @@ export async function executeGraphGetRelated(
             _metadata {
               key
               displayName
-              contentType
+              types
             }
-            ... on IContent {
+            ... on _IContent {
               name
               contentLink {
                 id

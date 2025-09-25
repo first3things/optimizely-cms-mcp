@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 // Common GraphQL fragments for Optimizely content
 export const CONTENT_METADATA_FRAGMENT = `
-  fragment ContentMetadata on IContent {
+  fragment ContentMetadata on _IContent {
     _metadata {
       key
       locale
@@ -21,7 +21,7 @@ export const CONTENT_METADATA_FRAGMENT = `
 `;
 
 export const CONTENT_BASIC_FRAGMENT = `
-  fragment ContentBasic on IContent {
+  fragment ContentBasic on _IContent {
     ...ContentMetadata
     contentLink {
       id
@@ -64,7 +64,7 @@ export function buildSearchQuery(params: {
       $limit: Int = ${params.limit || 20}
       $skip: Int = ${params.skip || 0}
     ) {
-      content: queryContent(
+      content: _Content(
         where: ${whereClause}
         limit: $limit
         skip: $skip
@@ -73,7 +73,7 @@ export function buildSearchQuery(params: {
         items {
           ...ContentMetadata
           ${params.includeScore ? '_score' : ''}
-          ... on IContent {
+          ... on _IContent {
             name
             contentLink {
               id
@@ -105,13 +105,13 @@ export function buildGetContentQuery(params: {
 }): string {
   const fieldsSelection = params.fields 
     ? params.fields.join('\n          ')
-    : '... on IContent { name }';
+    : '... on _IContent { name }';
 
   return `
     ${CONTENT_BASIC_FRAGMENT}
     
     query GetContent($id: String!, $locale: String) {
-      content: content(
+      content: _Content(
         where: { 
           _or: [
             { _metadata: { key: { eq: $id } } }
@@ -127,7 +127,7 @@ export function buildGetContentQuery(params: {
           ${fieldsSelection}
           ${params.includeRelated ? `
             _references {
-              ... on IContent {
+              ... on _IContent {
                 ...ContentMetadata
               }
             }
@@ -165,7 +165,7 @@ export function buildGetChildrenQuery(params: {
       $limit: Int = ${params.limit || 50}
       $skip: Int = ${params.skip || 0}
     ) {
-      content: queryContent(
+      content: _Content(
         where: ${whereClause}
         limit: $limit
         skip: $skip
@@ -185,7 +185,7 @@ export function buildGetAncestorsQuery(contentId: string, maxLevels?: number): s
     ${CONTENT_METADATA_FRAGMENT}
     
     query GetAncestors {
-      content: content(
+      content: _Content(
         where: { 
           _or: [
             { _metadata: { key: { eq: "${contentId}" } } }
@@ -236,14 +236,14 @@ export function buildFacetedSearchQuery(params: {
       $limit: Int = ${params.limit || 20}
       $skip: Int = ${params.skip || 0}
     ) {
-      content: queryContent(
+      content: _Content(
         where: ${whereClause}
         limit: $limit
         skip: $skip
       ) {
         items {
           ...ContentMetadata
-          ... on IContent {
+          ... on _IContent {
             name
             contentLink {
               id

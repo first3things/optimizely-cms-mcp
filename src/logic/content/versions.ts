@@ -143,25 +143,41 @@ export async function executeContentListLanguages(
     const validatedParams = validateInput(ListLanguagesSchema, params);
     const client = new OptimizelyContentClient(config);
     
-    let languages: LanguageInfo[];
+    // FIX 6: /languages endpoint doesn't exist
+    // To see locales, fetch GET /experimental/content/{key} and inspect locales
     
-    if (validatedParams.contentId) {
-      // Get languages for specific content
-      const path = client.getLanguagePath(validatedParams.contentId.toString());
-      languages = await client.get<LanguageInfo[]>(path);
-    } else {
-      // Get all available languages in the system
-      languages = await client.get<LanguageInfo[]>('/languages');
+    if (!validatedParams.contentId) {
+      throw new ValidationError(
+        'The /languages endpoint does not exist in the API.\n' +
+        'To see available locales for content:\n' +
+        '1. Provide a contentId to get locales for that specific content\n' +
+        '2. Use: GET /experimental/content/{key} and inspect the "locales" field'
+      );
     }
+    
+    // Get content metadata to see available locales
+    const metadata = await client.get<any>(
+      `/experimental/content/${validatedParams.contentId}`
+    );
+    
+    // Extract locale information from metadata
+    const locales = metadata.locales || {};
+    const localeInfo = Object.entries(locales).map(([locale, info]: [string, any]) => ({
+      name: locale,
+      displayName: info.displayName || locale,
+      status: info.status,
+      created: info.created,
+      createdBy: info.createdBy
+    }));
     
     return {
       content: [{
         type: 'text',
         text: JSON.stringify({
           contentId: validatedParams.contentId,
-          languages: languages,
-          totalLanguages: languages.length,
-          masterLanguage: languages.find(l => l.isMasterLanguage)?.name
+          locales: localeInfo,
+          totalLocales: localeInfo.length,
+          metadata: metadata
         }, null, 2)
       }]
     };
@@ -182,36 +198,40 @@ export async function executeContentCreateLanguageBranch(
     
     // If source language is specified, get content from that language
     if (validatedParams.sourceLanguage) {
+      // Use versions endpoint with locale query param
       sourceContent = await client.get<ContentItem>(
-        client.getContentPath(validatedParams.contentId.toString(), validatedParams.sourceLanguage)
+        `/experimental/content/${validatedParams.contentId}/versions?locale=${validatedParams.sourceLanguage}`
       );
     } else {
-      // Get content from master language
-      const languages = await client.get<LanguageInfo[]>(
-        client.getLanguagePath(validatedParams.contentId.toString())
+      // Get content metadata to find available locales
+      const metadata = await client.get<any>(
+        `/experimental/content/${validatedParams.contentId}`
       );
-      const masterLanguage = languages.find(l => l.isMasterLanguage);
       
-      if (!masterLanguage) {
-        throw new ValidationError('No master language found for content');
+      // Try to find a source locale (first available)
+      const locales = Object.keys(metadata.locales || {});
+      if (locales.length === 0) {
+        throw new ValidationError('No locales found for content');
       }
       
+      // Use the first available locale as source
       sourceContent = await client.get<ContentItem>(
-        client.getContentPath(validatedParams.contentId.toString(), masterLanguage.name)
+        `/experimental/content/${validatedParams.contentId}/versions?locale=${locales[0]}`
       );
     }
     
-    // Create language branch by copying content to new language
+    // Create language branch by creating a new version with target locale
     const request = {
-      name: sourceContent.name,
+      displayName: sourceContent.displayName || sourceContent.name,
       properties: sourceContent.properties,
-      language: validatedParams.language
+      status: 'draft',
+      contentType: sourceContent.contentType
     };
     
-    const result = await client.post<ContentItem>(
-      `/content/${validatedParams.contentId}/languages/${validatedParams.language}`,
-      request
-    );
+    // Create version with target locale as query parameter
+    const endpoint = `/experimental/content/${validatedParams.contentId}/versions?locale=${validatedParams.language}`;
+    
+    const result = await client.post<ContentItem>(endpoint, request);
     
     return {
       content: [{

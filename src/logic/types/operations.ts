@@ -12,7 +12,7 @@ export async function executeTypeList(
     const client = new OptimizelyContentClient(config);
     
     // The preview3 API returns paginated results with an 'items' array
-    const response = await client.get('/contenttypes');
+    const response = await client.get('/contentTypes');
     const types = response.items || [];
     
     // Filter out system types if requested
@@ -62,7 +62,7 @@ export async function executeTypeGet(
     
     const client = new OptimizelyContentClient(config);
     
-    const type = await client.get<ContentType>(`/contenttypes/${params.typeId}`);
+    const type = await client.get<ContentType>(`/contentTypes/${params.typeId}`);
     
     // Enhance with additional metadata
     const properties = Object.values(type.properties || {});
@@ -101,7 +101,7 @@ export async function executeTypeGetSchema(
     
     const client = new OptimizelyContentClient(config);
     
-    const type = await client.get<ContentType>(`/contenttypes/${params.typeId}`);
+    const type = await client.get<ContentType>(`/contentTypes/${params.typeId}`);
     
     // Convert to JSON Schema format
     const properties = Object.values(type.properties || {});

@@ -8,6 +8,7 @@ import {
 import { handleError, ValidationError } from '../../utils/errors.js';
 import { validateInput, sanitizeInput } from '../../utils/validation.js';
 import { z } from 'zod';
+import { createContentShell, createLocalizedVersion } from '../../utils/api-helpers.js';
 
 // Validation schemas
 // Removed unused ContentReferenceSchema
@@ -103,18 +104,18 @@ export async function executeContentCreate(
     const client = new OptimizelyContentClient(config);
     
     // Prepare the request according to CMA API specification
-    // The API expects a ContentItem structure
     const request: any = {
+      // REQUIRED: displayName (map from name parameter)
       displayName: validatedParams.displayName || validatedParams.name,
       properties: {}
     };
     
-    // According to the spec, contentType is required for creation
+    // FIX 1: contentType should be a string, not an array
     if (validatedParams.contentType) {
       const contentType = Array.isArray(validatedParams.contentType) 
         ? validatedParams.contentType[0] 
         : validatedParams.contentType;
-      request.contentType = contentType;
+      request.contentType = contentType; // Must be string like "ArticlePage"
     }
 
     // Handle properties - merge with any provided properties
@@ -125,44 +126,113 @@ export async function executeContentCreate(
     // Set other required fields from the API spec
     request.status = 'draft'; // New content starts as draft
     
-    // Handle parent container - API requires 'container' field
+    // FIX 2: Container must be a valid existing content key (GUID)
+    let containerGuid: string | undefined;
+    
     if (validatedParams.container) {
-      request.container = validatedParams.container;
+      containerGuid = validatedParams.container;
     } else if (validatedParams.parentId) {
-      // Try to parse parentId as GUID or convert to container reference
+      // Try to parse parentId as GUID
       const parentRef = parseContentReference(validatedParams.parentId);
       if (parentRef.guidValue) {
-        request.container = parentRef.guidValue;
+        containerGuid = parentRef.guidValue;
       } else {
         throw new ValidationError(
-          'Parent must be specified as a GUID. The Content Management API requires a valid container GUID.\n' +
-          'Example: "container": "12345678-1234-1234-1234-123456789012"\n' +
-          'To find valid container GUIDs, you may need to use the Optimizely CMS admin interface.'
+          'Container must be a valid content key (GUID) of an existing container.\n' +
+          'Example: "container": "fe8be9de716048a8a16f5fcdd25b04f9"\n\n' +
+          'To find valid container GUIDs:\n' +
+          '1. Use content_find_by_name tool to find pages like "Home"\n' +
+          '2. Use the returned key/GUID as the container\n\n' +
+          'The container must exist or you\'ll get an error.'
         );
       }
     } else {
       throw new ValidationError(
-        'Content creation requires a parent container. You have several options:\n\n' +
+        'Content creation requires a parent container GUID. You have several options:\n\n' +
         '1. USE THE INTELLIGENT TOOL (Recommended):\n' +
         '   Tool: content_create_under\n' +
         '   Example: { "parentName": "Home", "contentType": "ArticlePage", "name": "my-article" }\n\n' +
         '2. FIND THE PARENT FIRST:\n' +
         '   Step 1: Use content_find_by_name with { "name": "Home" }\n' +
-        '   Step 2: Use the returned GUID as container\n\n' +
-        '3. PROVIDE A CONTAINER GUID:\n' +
-        '   - "container": "<GUID>" (e.g., "12345678-1234-1234-1234-123456789012")\n' +
-        '   - "parentId": "<GUID>"\n\n' +
-        'TIP: Use content_site_info for detailed guidance on content creation.'
+        '   Step 2: Use the returned key as container\n\n' +
+        '3. PROVIDE A CONTAINER KEY:\n' +
+        '   - "container": "<GUID>" (e.g., "fe8be9de716048a8a16f5fcdd25b04f9")\n\n' +
+        'The container must be an existing content item.'
       );
     }
     
-    // Handle language/locale
-    if (validatedParams.language) {
-      request.locale = validatedParams.language;
+    if (containerGuid) {
+      // PREFLIGHT CHECK: Verify container exists before attempting creation
+      try {
+        await client.get(`/experimental/content/${containerGuid}`);
+      } catch (error: any) {
+        if (error.statusCode === 404) {
+          return {
+            isError: true,
+            content: [
+              { type: 'text', text: `Container validation failed: Content with key '${containerGuid}' does not exist.` },
+              { type: 'text', text: 'Please ensure the container GUID references an existing content item.' },
+              { type: 'text', text: 'Use content_find_by_name to find valid container GUIDs.' }
+            ]
+          };
+        }
+        throw error;
+      }
+      
+      request.container = containerGuid;
     }
     
-    // Use the experimental content endpoint
-    const result = await client.post<ContentItem>('/experimental/content', request);
+    // Implement two-step content creation for localized content types
+    let result: any;
+    
+    try {
+      // Get the token from the client config
+      const token = await client.getAccessToken();
+      
+      // Step 1: Create content shell (always without locale)
+      const shellResult = await createContentShell({
+        token,
+        displayName: request.displayName,
+        contentType: request.contentType as string, // Ensure it's a string
+        container: request.container,
+        baseProps: {} // Don't include properties in shell
+      });
+      
+      // Get the content key from the shell result
+      const contentKey = shellResult.key || shellResult.metadata?.key || shellResult._metadata?.key;
+      if (!contentKey) {
+        throw new Error('Failed to get content key from shell creation');
+      }
+      
+      // Step 2: Create localized version with properties
+      const locale = validatedParams.language || 'en';
+      result = await createLocalizedVersion({
+        token,
+        key: contentKey,
+        displayName: request.displayName,
+        locale,
+        status: 'draft',
+        properties: request.properties || {}
+      });
+      
+    } catch (error: any) {
+      // If the error suggests single-step creation might work (non-localized type)
+      // Try the original single-step approach
+      if (error.message?.includes('version already exists') || 
+          error.message?.includes('not a localized content type')) {
+        try {
+          let endpoint = '/experimental/content';
+          if (validatedParams.language) {
+            endpoint += `?locale=${encodeURIComponent(validatedParams.language)}`;
+          }
+          result = await client.post<ContentItem>(endpoint, request);
+        } catch (fallbackError: any) {
+          throw error; // Throw the original error
+        }
+      } else {
+        throw error;
+      }
+    }
     
     return {
       content: [{
@@ -174,7 +244,18 @@ export async function executeContentCreate(
         }, null, 2)
       }]
     };
-  } catch (error) {
+  } catch (error: any) {
+    // Return structured MCP error output
+    if (error.statusCode && error.details) {
+      return {
+        isError: true,
+        content: [
+          { type: 'text', text: `Content creation failed: ${error.message || 'Unknown error'}` },
+          { type: 'text', text: `HTTP ${error.statusCode}` },
+          { type: 'text', text: typeof error.details === 'string' ? error.details : JSON.stringify(error.details) }
+        ]
+      };
+    }
     return handleError(error);
   }
 }
@@ -222,10 +303,21 @@ export async function executeContentUpdate(
     const validatedParams = validateInput(UpdateContentSchema, params);
     const client = new OptimizelyContentClient(config);
     
+    // Build endpoint with locale query param if needed
+    let endpoint = `/experimental/content/${validatedParams.contentId}`;
+    if (validatedParams.language) {
+      // Get specific version for locale
+      const versionsEndpoint = `${endpoint}/versions?locale=${validatedParams.language}`;
+      const versions = await client.get<any>(versionsEndpoint);
+      
+      if (versions.items && versions.items.length > 0) {
+        // Update specific version with locale
+        endpoint = `${endpoint}/versions/${versions.items[0].version}?locale=${validatedParams.language}`;
+      }
+    }
+    
     // Get existing content first to preserve properties
-    const existing = await client.get<ContentItem>(
-      client.getContentPath(validatedParams.contentId.toString())
-    );
+    const existing = await client.get<ContentItem>(endpoint);
     
     // API uses PATCH with merge-patch+json for updates
     const patchData: any = {};
@@ -243,7 +335,7 @@ export async function executeContentUpdate(
     
     // Use the patch method with proper content type
     const result = await client.request<ContentItem>(
-      client.getContentPath(validatedParams.contentId.toString()),
+      endpoint,
       {
         method: 'PATCH',
         headers: {
