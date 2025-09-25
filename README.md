@@ -52,6 +52,7 @@ CMA_CLIENT_ID=your-client-id  # Get from Settings > API Keys in CMS
 CMA_CLIENT_SECRET=your-client-secret
 CMA_GRANT_TYPE=client_credentials
 CMA_TOKEN_ENDPOINT=https://api.cms.optimizely.com/oauth/token
+CMA_IMPERSONATE_USER=  # Optional: User email to impersonate (see Impersonation section)
 
 # Optional Configuration
 CACHE_TTL=300000 # Cache TTL in milliseconds (default: 5 minutes)
@@ -141,7 +142,8 @@ notepad %APPDATA%\Claude\claude_desktop_config.json
         "CMA_CLIENT_ID": "your-client-id",
         "CMA_CLIENT_SECRET": "your-client-secret",
         "CMA_GRANT_TYPE": "client_credentials",
-        "CMA_TOKEN_ENDPOINT": "https://api.cms.optimizely.com/oauth/token"
+        "CMA_TOKEN_ENDPOINT": "https://api.cms.optimizely.com/oauth/token",
+        "CMA_IMPERSONATE_USER": ""
       }
     }
   }

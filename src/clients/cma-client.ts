@@ -22,6 +22,7 @@ export class OptimizelyContentClient {
   private clientSecret: string;
   private grantType: string;
   private tokenEndpoint: string;
+  private impersonateUser?: string;
   private timeout: number;
   private maxRetries: number;
   private logger = getLogger();
@@ -35,6 +36,7 @@ export class OptimizelyContentClient {
     this.clientSecret = config.clientSecret;
     this.grantType = config.grantType;
     this.tokenEndpoint = config.tokenEndpoint || 'https://api.cms.optimizely.com/oauth/token';
+    this.impersonateUser = config.impersonateUser;
     this.timeout = config.timeout || 30000;
     this.maxRetries = config.maxRetries || 3;
   }
@@ -46,19 +48,34 @@ export class OptimizelyContentClient {
   }
 
   private async authenticate(): Promise<void> {
-    this.logger.info('Authenticating with Content Management API');
+    this.logger.info('Authenticating with Content Management API', {
+      impersonating: this.impersonateUser || 'none'
+    });
     
     try {
+      // For impersonation, use JSON body instead of form-urlencoded
+      const isImpersonating = !!this.impersonateUser;
+      const headers = isImpersonating
+        ? { 'Content-Type': 'application/json' }
+        : { 'Content-Type': 'application/x-www-form-urlencoded' };
+      
+      const body = isImpersonating
+        ? JSON.stringify({
+            grant_type: this.grantType,
+            client_id: this.clientId,
+            client_secret: this.clientSecret,
+            act_as: this.impersonateUser
+          })
+        : new URLSearchParams({
+            client_id: this.clientId,
+            client_secret: this.clientSecret,
+            grant_type: this.grantType
+          });
+
       const response = await fetch(this.tokenEndpoint, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({
-          client_id: this.clientId,
-          client_secret: this.clientSecret,
-          grant_type: this.grantType
-        }),
+        headers,
+        body,
         signal: AbortSignal.timeout(this.timeout)
       });
 

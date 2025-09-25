@@ -23,7 +23,8 @@ export const ConfigSchema = z.object({
     clientId: z.string(),
     clientSecret: z.string(),
     grantType: z.string().default('client_credentials'),
-    tokenEndpoint: z.string().url().optional()
+    tokenEndpoint: z.string().url().optional(),
+    impersonateUser: z.string().email().optional()
   }),
   options: z.object({
     cacheTtl: z.number().default(300),
@@ -60,4 +61,5 @@ export interface CMAConfig {
   tokenEndpoint?: string;
   timeout?: number;
   maxRetries?: number;
+  impersonateUser?: string;
 }
