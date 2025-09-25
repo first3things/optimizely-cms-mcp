@@ -34,13 +34,14 @@ interface OptimizelyProperty {
   required?: boolean;
   items?: { type: string };
   properties?: Record<string, OptimizelyProperty>;
-  enum?: string[];
+  enum?: Array<string | { value: string; displayName: string }>;
   default?: any;
   description?: string;
   minLength?: number;
   maxLength?: number;
   minimum?: number;
   maximum?: number;
+  contentType?: string; // For component types
 }
 
 export class OptimizelyAdapter extends BaseCMSAdapter {
@@ -85,9 +86,9 @@ export class OptimizelyAdapter extends BaseCMSAdapter {
         throw new Error(`Content type '${typeName}' not found`);
       }
 
-      // Parse properties into our schema format
-      const properties = this.parseProperties(response.properties || {});
-      const required = this.extractRequiredFields(response.properties || {});
+      // Parse properties into our schema format, including component types
+      const properties = await this.parsePropertiesWithComponents(response.properties || {});
+      const required = await this.extractRequiredFieldsWithComponents(response.properties || {});
       const defaults = await this.extractDefaults(response.properties || {}, typeName);
 
       return {
@@ -102,17 +103,46 @@ export class OptimizelyAdapter extends BaseCMSAdapter {
     }, 600); // Cache for 10 minutes
   }
 
-  private parseProperties(
+  private async parsePropertiesWithComponents(
     props: Record<string, OptimizelyProperty>, 
     parentPath = ''
-  ): PropertyDefinition[] {
+  ): Promise<PropertyDefinition[]> {
     const definitions: PropertyDefinition[] = [];
 
     for (const [key, prop] of Object.entries(props)) {
       const path = parentPath ? `${parentPath}.${key}` : key;
       
+      // Handle component types by fetching their schema
+      if (prop.type === 'component' && (prop as any).contentType) {
+        const componentType = (prop as any).contentType;
+        this.logger.debug(`Found component type: ${componentType} at ${path}`);
+        
+        // Add the component itself
+        definitions.push({
+          name: key,
+          path,
+          type: 'object',
+          required: prop.required || false,
+          description: prop.description
+        });
+        
+        try {
+          // Fetch component schema
+          const componentResponse = await this.client.get(`/contentTypes/${componentType}`);
+          if (componentResponse && componentResponse.properties) {
+            // Recursively parse component properties
+            const componentProps = await this.parsePropertiesWithComponents(
+              componentResponse.properties,
+              path
+            );
+            definitions.push(...componentProps);
+          }
+        } catch (error) {
+          this.logger.warn(`Failed to fetch component type ${componentType}:`, error);
+        }
+      }
       // Handle nested objects
-      if (prop.type === 'object' && prop.properties) {
+      else if (prop.type === 'object' && prop.properties) {
         // Add the object itself
         definitions.push({
           name: key,
@@ -123,7 +153,8 @@ export class OptimizelyAdapter extends BaseCMSAdapter {
         });
         
         // Add nested properties
-        definitions.push(...this.parseProperties(prop.properties, path));
+        const nestedProps = await this.parsePropertiesWithComponents(prop.properties, path);
+        definitions.push(...nestedProps);
       } else {
         // Regular property
         definitions.push({
@@ -132,7 +163,7 @@ export class OptimizelyAdapter extends BaseCMSAdapter {
           type: this.mapPropertyType(prop.type, prop.format),
           required: prop.required || false,
           defaultValue: prop.default,
-          allowedValues: prop.enum,
+          allowedValues: prop.enum?.map((e: any) => e.value || e),
           description: prop.description,
           validation: this.extractValidation(prop)
         });
@@ -142,11 +173,11 @@ export class OptimizelyAdapter extends BaseCMSAdapter {
     return definitions;
   }
 
-  private extractRequiredFields(
+  private async extractRequiredFieldsWithComponents(
     props: Record<string, OptimizelyProperty>,
     parentPath = '',
     required: string[] = []
-  ): string[] {
+  ): Promise<string[]> {
     for (const [key, prop] of Object.entries(props)) {
       const path = parentPath ? `${parentPath}.${key}` : key;
       
@@ -154,9 +185,26 @@ export class OptimizelyAdapter extends BaseCMSAdapter {
         required.push(path);
       }
       
+      // Handle component types
+      if (prop.type === 'component' && (prop as any).contentType) {
+        const componentType = (prop as any).contentType;
+        try {
+          // Fetch component schema to find its required fields
+          const componentResponse = await this.client.get(`/contentTypes/${componentType}`);
+          if (componentResponse && componentResponse.properties) {
+            await this.extractRequiredFieldsWithComponents(
+              componentResponse.properties,
+              path,
+              required
+            );
+          }
+        } catch (error) {
+          this.logger.warn(`Failed to get required fields for component ${componentType}:`, error);
+        }
+      }
       // Check nested properties
-      if (prop.type === 'object' && prop.properties) {
-        this.extractRequiredFields(prop.properties, path, required);
+      else if (prop.type === 'object' && prop.properties) {
+        await this.extractRequiredFieldsWithComponents(prop.properties, path, required);
       }
     }
     
@@ -197,6 +245,23 @@ export class OptimizelyAdapter extends BaseCMSAdapter {
           path
         );
         Object.assign(defaults, nestedDefaults);
+      }
+      // Handle component types
+      else if (prop.type === 'component' && (prop as any).contentType) {
+        const componentType = (prop as any).contentType;
+        try {
+          const componentResponse = await this.client.get(`/contentTypes/${componentType}`);
+          if (componentResponse && componentResponse.properties) {
+            const componentDefaults = await this.extractDefaults(
+              componentResponse.properties,
+              contentType,
+              path
+            );
+            Object.assign(defaults, componentDefaults);
+          }
+        } catch (error) {
+          this.logger.warn(`Failed to get defaults for component ${componentType}:`, error);
+        }
       }
     }
 

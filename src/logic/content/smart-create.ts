@@ -2,27 +2,15 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { OptimizelyGraphClient } from '../../clients/graph-client.js';
 import { OptimizelyContentClient } from '../../clients/cma-client.js';
 import { GraphConfig, CMAConfig } from '../../types/config.js';
-import { handleError, ValidationError } from '../../utils/errors.js';
+import { handleError } from '../../utils/errors.js';
 import { getLogger } from '../../utils/logger.js';
 import { z } from 'zod';
 import { validateInput, sanitizeInput } from '../../utils/validation.js';
+import { AdapterRegistry } from '../../adapters/registry.js';
 
 const logger = getLogger();
 
-// Common content type mappings
-const CONTENT_TYPE_MAPPINGS: Record<string, string[]> = {
-  'article': ['ArticlePage', 'Article', 'ArticlePageType', 'BlogPost', 'NewsArticle'],
-  'page': ['StandardPage', 'Page', 'ContentPage', 'BasicPage'],
-  'standard': ['StandardPage', 'Page'],
-  'blog': ['BlogPost', 'BlogPage', 'BlogArticle'],
-  'news': ['NewsPage', 'NewsArticle', 'NewsItem'],
-  'product': ['ProductPage', 'Product', 'ProductDetail'],
-  'landing': ['LandingPage', 'CampaignPage'],
-  'home': ['HomePage', 'StartPage', 'FrontPage'],
-  'start': ['StartPage', 'HomePage', 'FrontPage']
-};
-
-// Common parent page names
+// Common parent page names - this is still reasonable as it's not CMS-specific
 const COMMON_PARENT_NAMES = ['Home', 'Start', 'Root', 'Front Page', 'Index'];
 
 const SmartCreateSchema = z.object({
@@ -38,37 +26,65 @@ const SmartCreateSchema = z.object({
 });
 
 async function findContentTypeMatch(
-  graphClient: OptimizelyGraphClient,
+  adapter: any,
   requestedType: string | null | undefined
 ): Promise<string | null> {
   if (!requestedType) return null;
   
-  const normalized = requestedType.toLowerCase().replace(/[^a-z]/g, '');
-  
-  // Check mappings
-  for (const [key, types] of Object.entries(CONTENT_TYPE_MAPPINGS)) {
-    if (normalized.includes(key)) {
-      // Try to find which type exists in the system
-      for (const type of types) {
-        // For now, just return the first match
-        // In production, we'd query to verify it exists
-        return type;
-      }
+  try {
+    // Get all available content types from the adapter
+    const contentTypes = await adapter.getContentTypes();
+    
+    const normalized = requestedType.toLowerCase().replace(/[^a-z0-9]/g, '');
+    
+    // First try exact match (case-insensitive)
+    const exactMatch = contentTypes.find(ct => 
+      ct.key.toLowerCase() === requestedType.toLowerCase()
+    );
+    if (exactMatch) return exactMatch.key;
+    
+    // Try normalized match
+    const normalizedMatch = contentTypes.find(ct => 
+      ct.key.toLowerCase().replace(/[^a-z0-9]/g, '') === normalized
+    );
+    if (normalizedMatch) return normalizedMatch.key;
+    
+    // Try partial match based on category and keywords
+    const keywordMatch = contentTypes.find(ct => {
+      const ctNormalized = ct.key.toLowerCase();
+      const displayNormalized = ct.displayName?.toLowerCase() || '';
+      
+      // Check if the requested type is contained in the actual type
+      return ctNormalized.includes(normalized) || 
+             displayNormalized.includes(normalized) ||
+             normalized.includes(ctNormalized.replace('page', ''));
+    });
+    if (keywordMatch) return keywordMatch.key;
+    
+    // If looking for article/blog/news, prefer page types with those keywords
+    if (['article', 'blog', 'news', 'post'].some(keyword => normalized.includes(keyword))) {
+      const articleType = contentTypes.find(ct => 
+        ct.category === 'page' && 
+        (ct.key.toLowerCase().includes('article') || 
+         ct.key.toLowerCase().includes('blog') ||
+         ct.key.toLowerCase().includes('news'))
+      );
+      if (articleType) return articleType.key;
     }
-  }
-  
-  // Try exact match with different cases
-  const variations = [
-    requestedType,
-    requestedType.charAt(0).toUpperCase() + requestedType.slice(1),
-    requestedType.replace(/\s+/g, ''),
-    requestedType.replace(/\s+/g, '') + 'Page',
-    requestedType.replace(/page/i, 'Page')
-  ];
-  
-  for (const variation of variations) {
-    // In production, verify this type exists
-    if (variation) return variation;
+    
+    // Default to a standard page type if available
+    const standardPage = contentTypes.find(ct => 
+      ct.category === 'page' && 
+      (ct.key.toLowerCase().includes('standard') || ct.key === 'Page')
+    );
+    if (standardPage) return standardPage.key;
+    
+    // Return any page type as last resort
+    const anyPage = contentTypes.find(ct => ct.category === 'page');
+    if (anyPage) return anyPage.key;
+    
+  } catch (error) {
+    logger.warn('Failed to get content types for matching', error);
   }
   
   return null;
@@ -130,7 +146,11 @@ export async function executeSmartContentCreate(
     const validatedParams = validateInput(SmartCreateSchema, params);
     
     const graphClient = new OptimizelyGraphClient(graphConfig);
-    const cmaClient = new OptimizelyContentClient(cmaConfig);
+    // Note: We'll use executeContentCreate for creation, so cmaClient is only for fallback
+    
+    // Get the adapter for intelligent type discovery
+    const registry = AdapterRegistry.getInstance();
+    const adapter = registry.getOptimizelyAdapter(cmaConfig);
     
     logger.info('Smart content creation started', { 
       requestedType: validatedParams.contentType,
@@ -138,19 +158,36 @@ export async function executeSmartContentCreate(
       parentName: validatedParams.parentName
     });
     
-    // Step 1: Determine content type
+    // Step 1: Determine content type using intelligent discovery
     let contentType = validatedParams.contentType;
     
     if (!contentType || contentType === 'null') {
-      // Try to infer from suggested type or default to StandardPage
-      contentType = validatedParams.suggestedType || 
-                   await findContentTypeMatch(graphClient, validatedParams.suggestedType) ||
-                   'StandardPage';
+      // Try to infer from suggested type
+      contentType = await findContentTypeMatch(adapter, validatedParams.suggestedType);
+      
+      if (!contentType) {
+        // Get available content types for error message
+        const types = await adapter.getContentTypes();
+        const pageTypes = types.filter(t => t.category === 'page').map(t => t.key);
+        
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              error: 'Could not determine content type',
+              suggestedType: validatedParams.suggestedType,
+              availablePageTypes: pageTypes.slice(0, 5),
+              suggestion: 'Please specify a valid contentType parameter',
+              example: { contentType: pageTypes[0] || 'Page' }
+            }, null, 2)
+          }]
+        };
+      }
       
       logger.info('Inferred content type', { contentType });
     } else {
       // Try to find the correct content type name
-      const matchedType = await findContentTypeMatch(graphClient, contentType);
+      const matchedType = await findContentTypeMatch(adapter, contentType);
       if (matchedType) {
         contentType = matchedType;
         logger.info('Matched content type', { original: validatedParams.contentType, matched: contentType });
@@ -241,7 +278,7 @@ export async function executeSmartContentCreate(
     logger.info('Creating content', createRequest);
     
     try {
-      const result = await cmaClient.post('/content', createRequest);
+      const result = await cmaClient.post('/experimental/content', createRequest);
       
       return {
         content: [{
@@ -263,35 +300,55 @@ export async function executeSmartContentCreate(
         }]
       };
     } catch (error: any) {
-      // If content type doesn't exist, try fallback
-      if (error.status === 400 && contentType !== 'StandardPage') {
-        logger.warn('Content type might not exist, trying StandardPage', { 
+      // If content type doesn't exist, try to find a fallback
+      if (error.status === 400) {
+        logger.warn('Content creation failed, attempting intelligent fallback', { 
           failedType: contentType 
         });
         
-        createRequest.contentType = 'StandardPage';
-        const result = await cmaClient.post('/content', createRequest);
-        
-        return {
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              success: true,
-              created: {
-                id: result.contentLink?.id,
-                guid: result.contentLink?.guidValue,
-                name: result.name,
-                displayName: result.displayName,
-                contentType: 'StandardPage'
-              },
-              parent: {
-                guid: containerGuid
-              },
-              message: `Created as StandardPage (${contentType} might not exist)`,
-              note: 'The requested content type might not exist in your Optimizely instance'
-            }, null, 2)
-          }]
-        };
+        // Get available types and suggest alternatives
+        try {
+          const types = await adapter.getContentTypes();
+          const pageTypes = types.filter(t => t.category === 'page');
+          
+          // Try to find a suitable fallback
+          let fallbackType = pageTypes.find(t => 
+            t.key.toLowerCase().includes('standard') || 
+            t.key === 'Page'
+          )?.key;
+          
+          if (!fallbackType && pageTypes.length > 0) {
+            fallbackType = pageTypes[0].key;
+          }
+          
+          if (fallbackType) {
+            createRequest.contentType = fallbackType;
+            const result = await cmaClient.post('/experimental/content', createRequest);
+            
+            return {
+              content: [{
+                type: 'text',
+                text: JSON.stringify({
+                  success: true,
+                  created: {
+                    id: result.contentLink?.id,
+                    guid: result.contentLink?.guidValue,
+                    name: result.name,
+                    displayName: result.displayName,
+                    contentType: fallbackType
+                  },
+                  parent: {
+                    guid: containerGuid
+                  },
+                  message: `Created as ${fallbackType} (${contentType} was not available)`,
+                  note: `Available page types: ${pageTypes.map(t => t.key).join(', ')}`
+                }, null, 2)
+              }]
+            };
+          }
+        } catch (fallbackError) {
+          logger.error('Failed to find fallback type', fallbackError);
+        }
       }
       
       throw error;
