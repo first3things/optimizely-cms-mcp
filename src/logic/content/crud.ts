@@ -2,11 +2,7 @@ import { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { OptimizelyContentClient } from '../../clients/cma-client.js';
 import { CMAConfig } from '../../types/config.js';
 import { 
-  ContentItem, 
-  CreateContentRequest, 
-  UpdateContentRequest,
-  MoveContentRequest,
-  CopyContentRequest,
+  ContentItem,
   ContentReference
 } from '../../types/optimizely.js';
 import { handleError, ValidationError } from '../../utils/errors.js';
@@ -17,11 +13,11 @@ import { z } from 'zod';
 // Removed unused ContentReferenceSchema
 
 const CreateContentSchema = z.object({
-  contentType: z.union([z.string(), z.array(z.string())]),
+  contentType: z.union([z.string(), z.array(z.string()), z.null()]).optional(),
   name: z.string().min(1),
   displayName: z.string().min(1).optional(),
   properties: z.record(z.any()).optional(),
-  parentId: z.union([z.string(), z.number()]).optional(),
+  parentId: z.union([z.string(), z.number(), z.null()]).optional(),
   container: z.string().optional(), // GUID of parent container
   language: z.string().optional().default('en')
 });
@@ -92,24 +88,44 @@ export async function executeContentCreate(
 ): Promise<CallToolResult> {
   try {
     const validatedParams = validateInput(CreateContentSchema, params);
+    
+    // Check if we have null values that need smart handling
+    if (validatedParams.contentType === null || !validatedParams.contentType ||
+        (!validatedParams.container && !validatedParams.parentId)) {
+      // This should be handled by the tool handler, but as a fallback
+      throw new ValidationError(
+        'Content creation requires both contentType and a parent container. ' +
+        'The content-create tool handler should have redirected to smart creation. ' +
+        'Please report this issue.'
+      );
+    }
+    
     const client = new OptimizelyContentClient(config);
     
-    // Prepare the request according to CMA API requirements
+    // Prepare the request according to CMA API specification
+    // The API expects a ContentItem structure
     const request: any = {
-      contentType: Array.isArray(validatedParams.contentType) 
-        ? validatedParams.contentType[0] 
-        : validatedParams.contentType,
-      name: sanitizeInput(validatedParams.name) as string,
       displayName: validatedParams.displayName || validatedParams.name,
-      language: validatedParams.language || 'en'
+      properties: {}
     };
+    
+    // According to the spec, contentType is required for creation
+    if (validatedParams.contentType) {
+      const contentType = Array.isArray(validatedParams.contentType) 
+        ? validatedParams.contentType[0] 
+        : validatedParams.contentType;
+      request.contentType = contentType;
+    }
 
-    // Handle properties
+    // Handle properties - merge with any provided properties
     if (validatedParams.properties) {
       request.properties = sanitizeInput(validatedParams.properties);
     }
     
-    // Handle parent container - CMA API requires either 'container' or 'owner'
+    // Set other required fields from the API spec
+    request.status = 'draft'; // New content starts as draft
+    
+    // Handle parent container - API requires 'container' field
     if (validatedParams.container) {
       request.container = validatedParams.container;
     } else if (validatedParams.parentId) {
@@ -140,7 +156,13 @@ export async function executeContentCreate(
       );
     }
     
-    const result = await client.post<ContentItem>('/content', request);
+    // Handle language/locale
+    if (validatedParams.language) {
+      request.locale = validatedParams.language;
+    }
+    
+    // Use the experimental content endpoint
+    const result = await client.post<ContentItem>('/experimental/content', request);
     
     return {
       content: [{
@@ -148,7 +170,7 @@ export async function executeContentCreate(
         text: JSON.stringify({
           success: true,
           content: result,
-          message: `Content "${result.name}" created successfully with ID ${result.contentLink.id}`
+          message: `Content created successfully`
         }, null, 2)
       }]
     };
@@ -170,11 +192,14 @@ export async function executeContentGet(
     
     const client = new OptimizelyContentClient(config);
     
-    let path = `/content/${contentId}`;
-    const queryParams: Record<string, string> = {};
+    // Use experimental endpoint for content operations
+    let path = `/experimental/content/${contentId}`;
+    if (version) {
+      path += `/versions/${version}`;
+    }
     
-    if (language) queryParams.language = language;
-    if (version) queryParams.version = version;
+    const queryParams: Record<string, string> = {};
+    if (language) queryParams.locale = language;
     
     const result = await client.get<ContentItem>(path, queryParams);
     
@@ -199,21 +224,33 @@ export async function executeContentUpdate(
     
     // Get existing content first to preserve properties
     const existing = await client.get<ContentItem>(
-      client.getContentPath(validatedParams.contentId.toString(), validatedParams.language)
+      client.getContentPath(validatedParams.contentId.toString())
     );
     
-    const request: UpdateContentRequest = {
-      name: validatedParams.name || existing.name,
-      properties: {
+    // API uses PATCH with merge-patch+json for updates
+    const patchData: any = {};
+    
+    if (validatedParams.name) {
+      patchData.displayName = validatedParams.name;
+    }
+    
+    if (validatedParams.properties) {
+      patchData.properties = {
         ...existing.properties,
         ...sanitizeInput(validatedParams.properties)
-      },
-      createNewVersion: validatedParams.createVersion
-    };
+      };
+    }
     
-    const result = await client.put<ContentItem>(
-      client.getContentPath(validatedParams.contentId.toString(), validatedParams.language),
-      request
+    // Use the patch method with proper content type
+    const result = await client.request<ContentItem>(
+      client.getContentPath(validatedParams.contentId.toString()),
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/merge-patch+json'
+        },
+        body: JSON.stringify(patchData)
+      }
     );
     
     return {
@@ -221,8 +258,8 @@ export async function executeContentUpdate(
         type: 'text',
         text: JSON.stringify({
           success: true,
-          content: result,
-          message: `Content "${result.name}" updated successfully`
+          content: result.data,
+          message: `Content updated successfully`
         }, null, 2)
       }]
     };
@@ -240,8 +277,9 @@ export async function executeContentPatch(
     const client = new OptimizelyContentClient(config);
     
     const result = await client.patch<ContentItem>(
-      client.getContentPath(validatedParams.contentId.toString(), validatedParams.language),
-      validatedParams.patches
+      client.getContentPath(validatedParams.contentId.toString()),
+      validatedParams.patches,
+      false // Use JSON Patch format
     );
     
     return {
@@ -267,13 +305,19 @@ export async function executeContentDelete(
     const validatedParams = validateInput(DeleteContentSchema, params);
     const client = new OptimizelyContentClient(config);
     
-    let path = `/content/${validatedParams.contentId}`;
-    const queryParams: Record<string, string> = {};
+    // Use experimental endpoint
+    let path = `/experimental/content/${validatedParams.contentId}`;
+    const headers: Record<string, string> = {};
     
-    if (validatedParams.permanent) queryParams.permanent = 'true';
-    if (validatedParams.includeDescendants) queryParams.includeDescendants = 'true';
+    // The API uses headers for permanent delete option
+    if (validatedParams.permanent) {
+      headers['cms-permanent-delete'] = 'true';
+    }
     
-    await client.delete(path + '?' + new URLSearchParams(queryParams).toString());
+    await client.request(path, {
+      method: 'DELETE',
+      headers
+    });
     
     return {
       content: [{
@@ -281,8 +325,7 @@ export async function executeContentDelete(
         text: JSON.stringify({
           success: true,
           message: `Content ${validatedParams.contentId} deleted successfully`,
-          permanent: validatedParams.permanent,
-          includeDescendants: validatedParams.includeDescendants
+          permanent: validatedParams.permanent
         }, null, 2)
       }]
     };
@@ -299,14 +342,20 @@ export async function executeContentMove(
     const validatedParams = validateInput(MoveContentSchema, params);
     const client = new OptimizelyContentClient(config);
     
-    const request: MoveContentRequest = {
-      target: parseContentReference(validatedParams.targetId),
-      createRedirect: validatedParams.createRedirect
+    // According to API spec, move is done via PATCH on metadata
+    const patchData = {
+      container: validatedParams.targetId.toString()
     };
     
-    const result = await client.put<ContentItem>(
-      `/content/${validatedParams.contentId}/move`,
-      request
+    const result = await client.request<any>(
+      `/experimental/content/${validatedParams.contentId}`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/merge-patch+json'
+        },
+        body: JSON.stringify(patchData)
+      }
     );
     
     return {
@@ -314,7 +363,7 @@ export async function executeContentMove(
         type: 'text',
         text: JSON.stringify({
           success: true,
-          content: result,
+          content: result.data,
           message: `Content moved successfully to ${validatedParams.targetId}`
         }, null, 2)
       }]
@@ -332,14 +381,17 @@ export async function executeContentCopy(
     const validatedParams = validateInput(CopyContentSchema, params);
     const client = new OptimizelyContentClient(config);
     
-    const request: CopyContentRequest = {
-      target: parseContentReference(validatedParams.targetId),
-      includeDescendants: validatedParams.includeDescendants,
-      newName: validatedParams.newName
+    // According to API spec, copy endpoint expects CopyContentOptions
+    const request: any = {
+      container: validatedParams.targetId.toString()
     };
     
-    const result = await client.post<ContentItem>(
-      `/content/${validatedParams.contentId}/copy`,
+    if (validatedParams.includeDescendants) {
+      request.keepPublishedStatus = true; // Preserve published status during copy
+    }
+    
+    const result = await client.post<any>(
+      `/experimental/content/${validatedParams.contentId}:copy`,
       request
     );
     
@@ -349,7 +401,7 @@ export async function executeContentCopy(
         text: JSON.stringify({
           success: true,
           content: result,
-          message: `Content copied successfully with new ID ${result.contentLink.id}`
+          message: `Content copied successfully`
         }, null, 2)
       }]
     };

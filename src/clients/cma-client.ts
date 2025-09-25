@@ -199,13 +199,14 @@ export class OptimizelyContentClient {
     return response.data;
   }
 
-  async patch<T = any>(path: string, patches: any[]): Promise<T> {
+  async patch<T = any>(path: string, patchData: any, useMergePatch: boolean = false): Promise<T> {
+    const contentType = useMergePatch ? 'application/merge-patch+json' : 'application/json-patch+json';
     const response = await this.request<T>(path, {
       method: 'PATCH',
       headers: {
-        'Content-Type': 'application/json-patch+json'
+        'Content-Type': contentType
       },
-      body: JSON.stringify(patches)
+      body: JSON.stringify(patchData)
     });
     return response.data;
   }
@@ -231,7 +232,8 @@ export class OptimizelyContentClient {
 
   // Helper method to build content API paths
   getContentPath(contentId?: string, language?: string): string {
-    let path = '/content';
+    // All content operations are under /experimental/content
+    let path = '/experimental/content';
     if (contentId) {
       path += `/${contentId}`;
     }
@@ -243,20 +245,21 @@ export class OptimizelyContentClient {
 
   // Helper method to handle language branches
   getLanguagePath(contentId: string, language?: string): string {
+    // Language operations are under experimental content
     if (language) {
-      return `/content/${contentId}/languages/${language}`;
+      return `/experimental/content/${contentId}/versions?locale=${language}`;
     }
-    return `/content/${contentId}/languages`;
+    return `/experimental/content/${contentId}/versions`;
   }
 
   // Helper method for version paths
   getVersionPath(contentId: string, version?: string, language?: string): string {
-    let path = `/content/${contentId}/versions`;
+    let path = `/experimental/content/${contentId}/versions`;
     if (version) {
       path += `/${version}`;
     }
     if (language) {
-      path += `?language=${language}`;
+      path += `?locale=${language}`;
     }
     return path;
   }

@@ -11,12 +11,14 @@ export async function executeTypeList(
   try {
     const client = new OptimizelyContentClient(config);
     
-    const types = await client.get<ContentType[]>('/contenttypes');
+    // The preview3 API returns paginated results with an 'items' array
+    const response = await client.get('/contenttypes');
+    const types = response.items || [];
     
     // Filter out system types if requested
     const filteredTypes = params.includeSystemTypes 
       ? types 
-      : types.filter(t => !t.name.startsWith('EPiServer.') && !t.name.startsWith('System.'));
+      : types.filter(t => !t.key.startsWith('EPiServer.') && !t.key.startsWith('System.'));
     
     // Group types by base type
     const groupedTypes = filteredTypes.reduce((acc, type) => {
@@ -33,11 +35,13 @@ export async function executeTypeList(
           totalTypes: filteredTypes.length,
           typesByBase: groupedTypes,
           types: filteredTypes.map(t => ({
-            id: t.id,
-            name: t.name,
+            key: t.key,
+            name: t.key, // For backwards compatibility
             displayName: t.displayName,
             baseType: t.baseType,
-            propertyCount: t.properties.length
+            description: t.description,
+            source: t.source,
+            propertyCount: Object.keys(t.properties || {}).length
           }))
         }, null, 2)
       }]
@@ -61,13 +65,14 @@ export async function executeTypeGet(
     const type = await client.get<ContentType>(`/contenttypes/${params.typeId}`);
     
     // Enhance with additional metadata
+    const properties = Object.values(type.properties || {});
     const enhancedType = {
       ...type,
       summary: {
-        totalProperties: type.properties.length,
-        requiredProperties: type.properties.filter(p => p.required).length,
-        searchableProperties: type.properties.filter(p => p.searchable).length,
-        propertyTypes: type.properties.reduce((acc, prop) => {
+        totalProperties: properties.length,
+        requiredProperties: properties.filter(p => p.required).length,
+        searchableProperties: properties.filter(p => p.searchable).length,
+        propertyTypes: properties.reduce((acc, prop) => {
           acc[prop.dataType] = (acc[prop.dataType] || 0) + 1;
           return acc;
         }, {} as Record<string, number>)
@@ -99,12 +104,13 @@ export async function executeTypeGetSchema(
     const type = await client.get<ContentType>(`/contenttypes/${params.typeId}`);
     
     // Convert to JSON Schema format
+    const properties = Object.values(type.properties || {});
     const schema = {
       $schema: 'http://json-schema.org/draft-07/schema#',
       title: type.displayName,
       description: type.description,
       type: 'object',
-      properties: type.properties.reduce((acc, prop) => {
+      properties: properties.reduce((acc, prop) => {
         acc[prop.name] = {
           title: prop.displayName,
           description: prop.description,
@@ -114,7 +120,7 @@ export async function executeTypeGetSchema(
         };
         return acc;
       }, {} as Record<string, any>),
-      required: type.properties.filter(p => p.required).map(p => p.name),
+      required: properties.filter(p => p.required).map(p => p.name),
       additionalProperties: false
     };
     

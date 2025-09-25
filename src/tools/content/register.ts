@@ -1,6 +1,6 @@
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolContext } from '../../types/tools.js';
-import { getCMAConfig } from '../../config.js';
+import { getCMAConfig, getGraphConfig } from '../../config.js';
 import {
   executeContentCreate,
   executeContentGet,
@@ -30,6 +30,10 @@ import {
   executeGetSiteInfo,
   executeTestContentApi
 } from '../../logic/content/site-info.js';
+import {
+  executeContentTypeDiscovery,
+  executeSmartContentTypeMatch
+} from '../../logic/types/smart-discovery.js';
 
 export function getContentTools(): Tool[] {
   return [
@@ -55,13 +59,13 @@ export function getContentTools(): Tool[] {
     
     // Content CRUD Operations
     {
-      name: 'content_create',
+      name: 'content-create',
       description: 'Create new content items. IMPORTANT: Requires a container GUID. Use content_find_by_name to find parent pages or content_site_info for guidance.',
       inputSchema: {
         type: 'object',
         properties: {
           contentType: {
-            type: ['string', 'array'],
+            type: ['string', 'array', 'null'],
             items: { type: 'string' },
             description: 'Content type identifier (e.g., "StandardPage", "ArticlePage")'
           },
@@ -78,7 +82,7 @@ export function getContentTools(): Tool[] {
             description: 'Parent container GUID (required). Example: "12345678-1234-1234-1234-123456789012"'
           },
           parentId: {
-            type: ['string', 'integer'],
+            type: ['string', 'integer', 'null'],
             description: 'Alternative to container - must be a GUID'
           },
           properties: {
@@ -92,7 +96,7 @@ export function getContentTools(): Tool[] {
             default: 'en'
           }
         },
-        required: ['contentType', 'name'],
+        required: ['name'],
         additionalProperties: false
       }
     },
@@ -397,6 +401,44 @@ export function getContentTools(): Tool[] {
       }
     },
     {
+      name: 'type-discover',
+      description: 'Discover content types with smart matching (e.g., find "ArticlePage" from "article")',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          suggestedType: {
+            type: 'string',
+            description: 'The type you\'re looking for (e.g., "article", "blog post")'
+          },
+          includeDescriptions: {
+            type: 'boolean',
+            description: 'Include type descriptions',
+            default: false
+          }
+        },
+        additionalProperties: false
+      }
+    },
+    {
+      name: 'type-match',
+      description: 'Smart match a requested content type to available types',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          requestedType: {
+            type: 'string',
+            description: 'The content type name to match'
+          },
+          context: {
+            type: 'string',
+            description: 'Additional context to help matching'
+          }
+        },
+        required: ['requestedType'],
+        additionalProperties: false
+      }
+    },
+    {
       name: 'type-get',
       description: 'Get content type details',
       inputSchema: {
@@ -484,9 +526,26 @@ export function registerContentHandlers(
   );
 
   // Content CRUD handlers
-  handlers.set('content-create', async (params, context) => 
-    executeContentCreate(cmaConfig(context), params)
-  );
+  handlers.set('content-create', async (params, context) => {
+    // Check if we have null values that indicate Claude needs help
+    // Check both null literal and the string "null"
+    if (params.contentType === null || params.contentType === 'null' || !params.contentType || 
+        (!params.container && !params.parentId)) {
+      // Import smart create dynamically to avoid circular dependencies
+      const { executeSmartContentCreate } = await import('../../logic/content/smart-create.js');
+      const graphConfig = getGraphConfig(context.config);
+      
+      // Use smart create to handle null values intelligently
+      return executeSmartContentCreate(
+        graphConfig,
+        cmaConfig(context),
+        params
+      );
+    }
+    
+    // Otherwise use normal creation
+    return executeContentCreate(cmaConfig(context), params);
+  });
   
   handlers.set('content-get', async (params, context) => 
     executeContentGet(cmaConfig(context), params)
@@ -537,6 +596,14 @@ export function registerContentHandlers(
   // Type handlers
   handlers.set('type-list', async (params, context) => 
     executeTypeList(cmaConfig(context), params)
+  );
+  
+  handlers.set('type-discover', async (params, context) => 
+    executeContentTypeDiscovery(cmaConfig(context), params)
+  );
+  
+  handlers.set('type-match', async (params, context) => 
+    executeSmartContentTypeMatch(cmaConfig(context), params)
   );
   
   handlers.set('type-get', async (params, context) => 
