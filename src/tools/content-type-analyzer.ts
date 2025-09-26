@@ -35,32 +35,62 @@ export const contentTypeAnalyzerTool: ToolDefinition = {
       // Get schema
       const schema = await adapter.getContentTypeSchema(validated.contentType);
       
+      // Validate schema structure
+      if (!schema) {
+        throw new Error('Schema is null or undefined');
+      }
+      
+      // Ensure properties is an array
+      if (!schema.properties) {
+        logger.warn('Schema properties is undefined, defaulting to empty array');
+        schema.properties = [];
+      } else if (!Array.isArray(schema.properties)) {
+        logger.error('Schema properties is not an array:', {
+          type: typeof schema.properties,
+          value: schema.properties
+        });
+        throw new Error('Schema properties must be an array');
+      }
+      
+      // Ensure required is an array
+      if (!schema.required) {
+        schema.required = [];
+      } else if (!Array.isArray(schema.required)) {
+        logger.warn('Schema required is not an array, converting:', schema.required);
+        schema.required = [];
+      }
+      
       // Log schema structure for debugging
       logger.debug(`Schema structure for ${validated.contentType}:`, {
         hasProperties: !!schema.properties,
         propertiesIsArray: Array.isArray(schema.properties),
-        propertiesLength: Array.isArray(schema.properties) ? schema.properties.length : 'N/A',
+        propertiesLength: schema.properties.length,
         hasRequired: !!schema.required,
         requiredIsArray: Array.isArray(schema.required),
+        requiredLength: schema.required.length,
         hasDefaults: !!schema.defaults
       });
       
       // Get field defaults
-      const defaults = await adapter.getFieldDefaults(validated.contentType);
+      let defaults: any[] = [];
+      try {
+        defaults = await adapter.getFieldDefaults(validated.contentType);
+      } catch (error) {
+        logger.warn('Failed to get field defaults:', error);
+        defaults = [];
+      }
       
       // Build analysis report
       const analysis = {
         contentType: schema.name,
         displayName: schema.displayName,
         baseType: schema.baseType,
-        totalProperties: Array.isArray(schema.properties) ? schema.properties.length : 0,
-        requiredFields: Array.isArray(schema.required) ? schema.required.length : 0,
+        totalProperties: schema.properties.length,
+        requiredFields: schema.required.length,
         
         // Required fields analysis
-        requiredFieldsDetails: (Array.isArray(schema.required) ? schema.required : []).map(fieldPath => {
-          const prop = Array.isArray(schema.properties) 
-            ? schema.properties.find(p => p.path === fieldPath)
-            : undefined;
+        requiredFieldsDetails: schema.required.map(fieldPath => {
+          const prop = schema.properties.find(p => p.path === fieldPath);
           const defaultValue = schema.defaults?.[fieldPath];
           const fieldDefault = Array.isArray(defaults) 
             ? defaults.find(d => d.field === fieldPath)
@@ -79,25 +109,19 @@ export const contentTypeAnalyzerTool: ToolDefinition = {
         
         // All fields with categorization
         fieldsByCategory: {
-          seo: Array.isArray(schema.properties) 
-            ? schema.properties.filter(p => p.path?.toLowerCase().includes('seo'))
-            : [],
-          metadata: Array.isArray(schema.properties)
-            ? schema.properties.filter(p => 
-                p.path?.toLowerCase().includes('meta') || 
-                p.path?.toLowerCase().includes('created') ||
-                p.path?.toLowerCase().includes('modified')
-              )
-            : [],
-          content: Array.isArray(schema.properties)
-            ? schema.properties.filter(p => 
-                p.path && 
-                !p.path.toLowerCase().includes('seo') && 
-                !p.path.toLowerCase().includes('meta') &&
-                !p.path.toLowerCase().includes('created') &&
-                !p.path.toLowerCase().includes('modified')
-              )
-            : []
+          seo: schema.properties.filter(p => p.path?.toLowerCase().includes('seo')),
+          metadata: schema.properties.filter(p => 
+            p.path?.toLowerCase().includes('meta') || 
+            p.path?.toLowerCase().includes('created') ||
+            p.path?.toLowerCase().includes('modified')
+          ),
+          content: schema.properties.filter(p => 
+            p.path && 
+            !p.path.toLowerCase().includes('seo') && 
+            !p.path.toLowerCase().includes('meta') &&
+            !p.path.toLowerCase().includes('created') &&
+            !p.path.toLowerCase().includes('modified')
+          )
         },
         
         // Smart defaults
@@ -111,14 +135,12 @@ export const contentTypeAnalyzerTool: ToolDefinition = {
           : [],
         
         // Validation rules
-        validationRules: Array.isArray(schema.properties)
-          ? schema.properties
-              .filter(p => p.validation)
-              .map(p => ({
-                field: p.path,
-                rule: p.validation
-              }))
-          : []
+        validationRules: schema.properties
+          .filter(p => p.validation)
+          .map(p => ({
+            field: p.path,
+            rule: p.validation
+          }))
       };
       
       // Add examples if requested
@@ -165,10 +187,8 @@ async function generateExamplePayload(
   };
   
   // Add required fields with examples
-  for (const required of (Array.isArray(schema.required) ? schema.required : [])) {
-    const prop = Array.isArray(schema.properties) 
-      ? schema.properties.find((p: any) => p.path === required)
-      : undefined;
+  for (const required of schema.required) {
+    const prop = schema.properties.find((p: any) => p.path === required);
     if (!prop) continue;
     
     // Get suggested values

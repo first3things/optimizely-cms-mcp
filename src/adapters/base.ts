@@ -151,6 +151,12 @@ export abstract class BaseCMSAdapter implements CMSAdapter {
     const schema = await this.getContentTypeSchema(typeName);
     const defaults: FieldDefault[] = [];
 
+    // Ensure properties is an array
+    if (!Array.isArray(schema.properties)) {
+      console.warn(`Schema properties is not an array for type ${typeName}`);
+      return defaults;
+    }
+
     // Generate intelligent defaults based on field names and types
     for (const prop of schema.properties) {
       if (prop.defaultValue !== undefined) {
@@ -273,7 +279,8 @@ export abstract class BaseCMSAdapter implements CMSAdapter {
     }
 
     // Validate field types and constraints
-    for (const prop of schema.properties) {
+    if (Array.isArray(schema.properties)) {
+      for (const prop of schema.properties) {
       const value = this.getFieldValue(content, prop.path);
       if (value !== undefined && value !== null) {
         const typeValidation = this.validateFieldType(value, prop);
@@ -281,6 +288,7 @@ export abstract class BaseCMSAdapter implements CMSAdapter {
           errors.push(...typeValidation.errors);
         }
       }
+    }
     }
 
     return {
@@ -400,7 +408,9 @@ export abstract class BaseCMSAdapter implements CMSAdapter {
     context?: Record<string, any>
   ): Promise<any[]> {
     const schema = await this.getContentTypeSchema(contentType);
-    const prop = schema.properties.find(p => p.path === fieldPath);
+    const prop = Array.isArray(schema.properties) 
+      ? schema.properties.find(p => p.path === fieldPath)
+      : undefined;
     
     if (prop?.allowedValues) {
       return prop.allowedValues;
