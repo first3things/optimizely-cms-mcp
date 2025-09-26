@@ -7,14 +7,14 @@ export const CONTENT_METADATA_FRAGMENT = `
       key
       locale
       displayName
-      contentType
+      types
       url {
         base
         hierarchical
       }
       published
       created
-      modified
+      lastModified
       status
     }
   }
@@ -23,17 +23,6 @@ export const CONTENT_METADATA_FRAGMENT = `
 export const CONTENT_BASIC_FRAGMENT = `
   fragment ContentBasic on _IContent {
     ...ContentMetadata
-    contentLink {
-      id
-      workId
-      guidValue
-    }
-    name
-    parentLink {
-      id
-      workId
-      guidValue
-    }
   }
 `;
 
@@ -74,22 +63,22 @@ export function buildSearchQuery(params: {
           ...ContentMetadata
           ${params.includeScore ? '_score' : ''}
           ... on _IContent {
-            name
-            contentLink {
-              id
-              guidValue
+            _metadata {
+              displayName
             }
           }
         }
         total
         facets {
-          contentType {
-            name
-            count
-          }
-          locale {
-            name
-            count
+          _metadata {
+            types(limit: 10) {
+              name
+              count
+            }
+            locale(limit: 10) {
+              name
+              count
+            }
           }
         }
       }
@@ -105,20 +94,19 @@ export function buildGetContentQuery(params: {
 }): string {
   const fieldsSelection = params.fields 
     ? params.fields.join('\n          ')
-    : '... on _IContent { name }';
+    : '';
 
   return `
+    ${CONTENT_METADATA_FRAGMENT}
     ${CONTENT_BASIC_FRAGMENT}
     
-    query GetContent($id: String!, $locale: String) {
+    query GetContent($id: String!) {
       content: _Content(
         where: { 
-          _or: [
-            { _metadata: { key: { eq: $id } } }
-            { contentLink: { id: { eq: $id } } }
-            { contentLink: { guidValue: { eq: $id } } }
-          ]
-          ${params.locale ? '_metadata: { locale: { eq: $locale } }' : ''}
+          _metadata: { 
+            key: { eq: $id }
+            ${params.locale ? `locale: { eq: "${params.locale}" }` : ''}
+          }
         }
         limit: 1
       ) {
@@ -145,7 +133,7 @@ export function buildGetChildrenQuery(params: {
   skip?: number;
   orderBy?: { field: string; direction: 'asc' | 'desc' };
 }): string {
-  const whereConditions = [`parentLink: { id: { eq: "${params.parentId}" } }`];
+  const whereConditions = [`_metadata: { parent: { id: { eq: "${params.parentId}" } } }`];
   
   if (params.contentTypes && params.contentTypes.length > 0) {
     whereConditions.push(
@@ -156,9 +144,10 @@ export function buildGetChildrenQuery(params: {
   const whereClause = `{ ${whereConditions.join(', ')} }`;
   const orderByClause = params.orderBy 
     ? `orderBy: { ${params.orderBy.field}: ${params.orderBy.direction.toUpperCase()} }`
-    : 'orderBy: { name: ASC }';
+    : 'orderBy: { _metadata: { displayName: ASC } }';
 
   return `
+    ${CONTENT_METADATA_FRAGMENT}
     ${CONTENT_BASIC_FRAGMENT}
     
     query GetChildren(
@@ -189,7 +178,6 @@ export function buildGetAncestorsQuery(contentId: string, maxLevels?: number): s
         where: { 
           _or: [
             { _metadata: { key: { eq: "${contentId}" } } }
-            { contentLink: { id: { eq: "${contentId}" } } }
           ]
         }
         limit: 1
@@ -244,10 +232,8 @@ export function buildFacetedSearchQuery(params: {
         items {
           ...ContentMetadata
           ... on _IContent {
-            name
-            contentLink {
-              id
-              guidValue
+            _metadata {
+              displayName
             }
           }
         }
@@ -275,7 +261,7 @@ function buildWhereClause(params: {
 
   if (params.types && params.types.length > 0) {
     conditions.push(
-      `_metadata: { contentType: { in: [${params.types.map(t => `"${t}"`).join(', ')}] } }`
+      `_metadata: { types: { in: [${params.types.map(t => `"${t}"`).join(', ')}] } }`
     );
   }
 

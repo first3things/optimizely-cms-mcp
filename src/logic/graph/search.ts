@@ -122,7 +122,7 @@ export async function executeGraphAutocomplete(
     // Build autocomplete query
     const query = `
       query Autocomplete($term: String!, $field: String!, $limit: Int) {
-        autocomplete: queryContent(
+        autocomplete: _Content(
           where: { ${validatedParams.field}: { startsWith: $term } }
           limit: $limit
           orderBy: { ${validatedParams.field}: ASC }
@@ -131,10 +131,12 @@ export async function executeGraphAutocomplete(
             _metadata {
               key
               displayName
-              contentType
+              types
             }
-            ... on IContent {
-              name
+            ... on _IContent {
+              _metadata {
+                displayName
+              }
               ${validatedParams.field}
             }
           }

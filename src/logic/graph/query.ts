@@ -179,7 +179,7 @@ export async function executeGraphGetRelated(
           where: { 
             _or: [
               { _metadata: { key: { eq: $contentId } } }
-              { contentLink: { id: { eq: $contentId } } }
+              { _metadata: { guid: { eq: $contentId } } }
             ]
           }
           limit: 1
@@ -196,10 +196,9 @@ export async function executeGraphGetRelated(
                 types
               }
               ... on _IContent {
-                name
-                contentLink {
-                  id
-                  guidValue
+                _metadata {
+                  displayName
+                  guid
                 }
               }
             }
@@ -223,10 +222,9 @@ export async function executeGraphGetRelated(
               types
             }
             ... on _IContent {
-              name
-              contentLink {
-                id
-                guidValue
+              _metadata {
+                displayName
+                guid
               }
             }
           }
