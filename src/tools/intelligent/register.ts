@@ -119,7 +119,7 @@ export function getIntelligentTools(): Tool[] {
     },
     {
       name: 'graph_intelligent_query',
-      description: 'Execute intelligent GraphQL queries that automatically discover and use available fields. No hardcoded field names!',
+      description: '[DEPRECATED - Use graph-search, graph-get-content, or graph-get-content-by-path instead] Execute complex GraphQL queries with automatic field discovery. Only use this for advanced scenarios not covered by the standard graph tools.',
       inputSchema: {
         type: 'object',
         properties: {

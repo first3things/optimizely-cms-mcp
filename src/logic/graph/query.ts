@@ -3,7 +3,8 @@ import { OptimizelyGraphClient } from '../../clients/graph-client.js';
 import { GraphConfig } from '../../types/config.js';
 import { handleError, ValidationError } from '../../utils/errors.js';
 import { validateGraphQLQuery } from '../../utils/validation.js';
-import { createIntelligentQueryBuilder } from './intelligent-query-builder.js';
+import { createQueryAdapter } from './query-adapter.js';
+import { getLogger } from '../../utils/logger.js';
 
 export async function executeGraphQuery(
   config: GraphConfig,
@@ -89,14 +90,16 @@ export async function executeGraphGetContentByPath(
       throw new ValidationError('Path is required');
     }
 
-    const client = new OptimizelyGraphClient(config);
-    const queryBuilder = await createIntelligentQueryBuilder(config);
+    const logger = getLogger();
+    const queryAdapter = await createQueryAdapter(config);
+    
+    logger.debug(`Using ${queryAdapter.getMode()} query builder`);
     
     // Normalize path
     const normalizedPath = params.path.startsWith('/') ? params.path : `/${params.path}`;
     
-    // Build query using intelligent query builder
-    const query = await queryBuilder.buildGetContentByPathQuery({
+    // Build query using the adapter
+    const query = await queryAdapter.buildGetContentByPathQuery({
       path: normalizedPath,
       locale: params.locale || 'en',
       includeAllFields: !params.fields || params.fields.length === 0,
@@ -106,15 +109,18 @@ export async function executeGraphGetContentByPath(
       }
     });
 
-    const variables = {
-      path: normalizedPath
-    };
+    const variableGenerators = queryAdapter.getVariableGenerators();
+    const variables = variableGenerators.path(
+      normalizedPath,
+      params.locale || 'en'
+    );
 
-    const result = await client.query(query, variables, {
-      operationName: 'GetContentByPath'
-    });
+    const result = await queryAdapter.executeQuery(query, variables);
 
-    const content = (result as any).content?.items?.[0];
+    // Handle different response structures
+    const content = (result as any).content?.items?.[0] || 
+                   (result as any)._Content?.items?.[0] ||
+                   (result as any).Content?.items?.[0];
     
     if (!content) {
       return {
@@ -150,26 +156,53 @@ export async function executeGraphGetRelated(
       throw new ValidationError('Content ID is required');
     }
 
-    const client = new OptimizelyGraphClient(config);
-    const queryBuilder = await createIntelligentQueryBuilder(config);
+    const logger = getLogger();
+    const queryAdapter = await createQueryAdapter(config);
     const direction = params.direction || 'outgoing';
     const limit = params.limit || 20;
     
-    // Build query using intelligent query builder
-    const query = await queryBuilder.buildRelatedContentQuery({
-      contentId: params.contentId,
-      direction: direction,
-      limit: limit
-    });
+    logger.debug(`Using ${queryAdapter.getMode()} query builder for related content`);
+    
+    // For now, build a simple related content query
+    // The dynamic builder doesn't have this method yet, so we'll build it manually
+    const query = `
+      query GetRelatedContent($contentId: String!, $limit: Int) {
+        ${direction === 'outgoing' ? 
+          `_Content(where: { _metadata: { key: { eq: $contentId } } }, limit: 1) {
+            items {
+              _metadata {
+                key
+                displayName
+              }
+              _references(limit: $limit) {
+                _metadata {
+                  key
+                  displayName
+                  types
+                }
+              }
+            }
+          }` :
+          `_Content(where: { _references: { _metadata: { key: { eq: $contentId } } } }, limit: $limit) {
+            items {
+              _metadata {
+                key
+                displayName
+                types
+              }
+            }
+            total
+          }`
+        }
+      }
+    `;
 
     const variables = {
       contentId: params.contentId,
       limit
     };
 
-    const result = await client.query(query, variables, {
-      operationName: direction === 'outgoing' ? 'GetOutgoingRelations' : 'GetIncomingRelations'
-    });
+    const result = await queryAdapter.executeQuery(query, variables);
 
     return {
       content: [{

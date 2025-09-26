@@ -9,6 +9,7 @@ import {
 import { OptimizelyGraphClient } from '../../clients/graph-client.js';
 import { GraphConfig } from '../../types/config.js';
 import { getLogger } from '../../utils/logger.js';
+import { ContentFieldMapper } from '../../utils/content-field-mapper.js';
 
 export interface QueryBuilderOptions {
   includeMetadata?: boolean;
@@ -28,8 +29,11 @@ export class IntelligentQueryBuilder {
   private schema: IntrospectionQuery | null = null;
   private typeMap: Map<string, IntrospectionType> = new Map();
   private logger = getLogger();
+  private fieldMapper: ContentFieldMapper;
   
-  constructor(private client: OptimizelyGraphClient) {}
+  constructor(private client: OptimizelyGraphClient) {
+    this.fieldMapper = new ContentFieldMapper(client);
+  }
 
   /**
    * Initialize the query builder by fetching the schema
@@ -419,19 +423,81 @@ export class IntelligentQueryBuilder {
     const fragments: string[] = [];
     
     for (const typeName of contentTypes) {
-      const fields = await this.getFieldsForType(typeName);
-      if (fields.length === 0) continue;
-      
-      const fieldSelection = this.selectFields(fields, options);
-      if (fieldSelection.length === 0) continue;
-      
-      fragments.push(`
+      // Use the field mapper to get actual fields for this type
+      const fieldInfo = await this.fieldMapper.getFieldsForContentType(typeName);
+      if (!fieldInfo) {
+        // Fall back to introspection if field mapper fails
+        const fields = await this.getFieldsForType(typeName);
+        if (fields.length === 0) continue;
+        
+        const fieldSelection = this.selectFields(fields, options);
+        if (fieldSelection.length === 0) continue;
+        
+        fragments.push(`
         ... on ${typeName} {
           ${fieldSelection}
         }`);
+      } else {
+        // Build selection from actual discovered fields
+        const selections: string[] = [];
+        
+        for (const [fieldName, mapping] of fieldInfo.fields) {
+          // Skip system fields except _metadata
+          if (fieldName.startsWith('_') && fieldName !== '_metadata') continue;
+          
+          // Apply field filters
+          if (options?.excludeFields?.includes(fieldName)) continue;
+          if (options?.includeFields && !options.includeFields.includes(fieldName)) continue;
+          
+          // Include the field
+          if (this.isSimpleType(mapping.type)) {
+            selections.push(fieldName);
+          } else if (fieldName === '_metadata') {
+            // Always include metadata with its subfields
+            selections.push(`_metadata {
+              key
+              locale
+              displayName
+              types
+              url {
+                base
+                hierarchical
+              }
+              published
+              created
+              lastModified
+              status
+            }`);
+          }
+        }
+        
+        // Always include the main content field if it exists
+        const mainContentField = await this.fieldMapper.getMainContentField(typeName);
+        if (mainContentField && !selections.includes(mainContentField)) {
+          selections.push(mainContentField);
+        }
+        
+        if (selections.length > 0) {
+          fragments.push(`
+        ... on ${typeName} {
+          ${selections.join('\n          ')}
+        }`);
+        }
+      }
     }
     
     return fragments.join('\n');
+  }
+  
+  /**
+   * Check if a type is simple (scalar or enum)
+   */
+  private isSimpleType(type: string): boolean {
+    const simpleTypes = [
+      'String', 'Int', 'Float', 'Boolean', 'ID',
+      'Date', 'DateTime', 'Url', 'Html'
+    ];
+    return simpleTypes.includes(type);
   }
 
   /**

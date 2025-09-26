@@ -6,6 +6,7 @@ import { AuthenticationError, APIError, TimeoutError } from '../utils/errors.js'
 import { withRetry } from '../utils/errors.js';
 import { getLogger, logAPIRequest, logAPIResponse } from '../utils/logger.js';
 import { withCache } from '../utils/cache.js';
+import { handleGraphQLError } from '../utils/graphql-error-handler.js';
 
 export class OptimizelyGraphClient {
   private endpoint: string;
@@ -143,7 +144,9 @@ export class OptimizelyGraphClient {
         async () => {
           this.logger.debug('Executing GraphQL query', {
             operationName: options?.operationName,
-            variables
+            variables,
+            queryType: typeof query,
+            queryLength: query?.length
           });
           
           // For HMAC auth, we need to update headers for each request
@@ -153,7 +156,12 @@ export class OptimizelyGraphClient {
             this.client.setHeaders(headers);
           }
           
-          return await this.client.request<T>(query, variables);
+          try {
+            return await this.client.request<T>(query, variables);
+          } catch (requestError) {
+            // Handle GraphQL-specific errors with enhanced error messages
+            handleGraphQLError(requestError, query, variables);
+          }
         },
         { maxRetries: this.maxRetries }
       );

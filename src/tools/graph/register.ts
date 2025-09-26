@@ -31,7 +31,7 @@ export function getGraphTools(): Tool[] {
   return [
     {
       name: 'graph-query',
-      description: 'Execute custom GraphQL queries. Use OTHER TOOLS FIRST (graph-search, graph-get-content) for common operations. Only use this for complex queries or when other tools don\'t meet your needs.',
+      description: 'Execute custom GraphQL queries. ONLY USE THIS if other tools don\'t work.\n\nPrefer these tools instead:\n- graph-search: Find any content\n- graph-get-content: Get content by ID\n- graph-get-content-by-path: Get content by URL path\n\nThis tool is for complex custom queries only.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -69,7 +69,7 @@ export function getGraphTools(): Tool[] {
     },
     {
       name: 'graph-search',
-      description: 'Search for content in Optimizely Graph. USE THIS FIRST to find pages, articles, or any content before using other graph tools. Searches in displayName, heading, title, and metadata fields. Example: search for "home" to find homepage, "article" to find articles, etc.',
+      description: 'Search for content in Optimizely Graph. USE THIS FIRST to find pages, articles, or any content.\n\nExamples:\n- Search "home" to find the homepage\n- Search "about" to find about pages\n- Search "article" to find articles\n- Search "product" to find product pages\n\nSearches in: displayName, name, and full text content.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -198,7 +198,7 @@ export function getGraphTools(): Tool[] {
     },
     {
       name: 'graph-get-content',
-      description: 'Get full content details by ID/key. Use AFTER graph-search to get complete content. Note: If ID has suffixes like _en_Published, they will be handled automatically.',
+      description: 'Get full content details by ID/key. Use AFTER graph-search to get complete content.\n\nExamples:\n- ID: "fe8be9de-7160-48a8-a16f-5fcdd25b04f9"\n- ID with suffix: "fe8be9de-7160-48a8-a16f-5fcdd25b04f9_en_Published" (suffix will be stripped automatically)\n\nReturns: Complete content with metadata, URL, and all fields.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -226,7 +226,7 @@ export function getGraphTools(): Tool[] {
     },
     {
       name: 'graph-get-content-by-path',
-      description: 'Get content by its URL path (e.g., "/" for homepage, "/articles/my-article/"). Useful when you know the page URL.',
+      description: 'Get content by its URL path. USE THIS FOR HOMEPAGE or when you know the exact URL.\n\nExamples:\n- Homepage: path="/"\n- About page: path="/about" or path="/about/"\n- Article: path="/articles/my-article"\n- Localized: path="/en/products/item-1" with locale="en"\n\nReturns: Content at that exact path.',
       inputSchema: {
         type: 'object',
         properties: {
