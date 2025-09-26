@@ -1,3 +1,20 @@
+/**
+ * Optimizely Content Management API (CMA) Tools
+ * 
+ * ✅ CMA tools provide FULL content structure including composition/visual builder data
+ * 
+ * Key differences from Graph tools:
+ * - CMA: Complete content structure, composition, properties, editing capabilities
+ * - Graph: Metadata only, fast search, routing information
+ * 
+ * TYPICAL WORKFLOW:
+ * 1. Use graph-search to find content
+ * 2. Use content-get with the ID to retrieve full structure (including composition)
+ * 3. Use content-update/content-patch to make changes
+ * 
+ * For composition/visual builder data: ALWAYS use content-get (CMA)
+ */
+
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolContext } from '../../types/tools.js';
 import { getCMAConfig, getGraphConfig } from '../../config.js';
@@ -103,7 +120,7 @@ export function getContentTools(): Tool[] {
     },
     {
       name: 'content-get',
-      description: 'Retrieve content details from CMA',
+      description: 'Retrieve FULL content details from Content Management API (CMA).\n\n✅ INCLUDES: Composition/Visual Builder data, all properties, and complete content structure.\n\nUse this when you need:\n- Full content structure including composition\n- Visual builder/layout data\n- Complete property values for editing\n- Content before making updates\n\nTypical workflow:\n1. Use graph-search or graph-get-content-by-path to find content ID\n2. Use content-get with that ID to retrieve full structure\n3. Use content-update/content-patch to make changes\n\nExample calls:\n- {"contentId": "fe8be9de716048a8a16f5fcdd25b04f9"}\n- {"contentId": "fe8be9de716048a8a16f5fcdd25b04f9", "language": "en"}\n\n⚠️ IMPORTANT: You MUST pass the contentId in the arguments object:\n✅ CORRECT: {"arguments": {"contentId": "fe8be9de716048a8a16f5fcdd25b04f9"}}\n❌ WRONG: {"arguments": {}}\n❌ WRONG: Not passing arguments at all',
       inputSchema: {
         type: 'object',
         properties: {

@@ -9,6 +9,8 @@ import type { Tool, ListToolsResult } from '@modelcontextprotocol/sdk/types.js';
 import { getGraphTools, registerGraphHandlers } from './tools/graph/register.js';
 import { getContentTools, registerContentHandlers } from './tools/content/register.js';
 import { getIntelligentTools, registerIntelligentHandlers } from './tools/intelligent/register.js';
+import { getHelperTools } from './tools/helper/register.js';
+import { executeGetFullContentByPath } from './tools/helper/get-full-content.js';
 
 export async function registerAllTools(server: Server, config: Config): Promise<void> {
   const logger = getLogger();
@@ -63,7 +65,8 @@ export async function registerAllTools(server: Server, config: Config): Promise<
     ...utilityTools,
     ...getGraphTools(),
     ...getContentTools(),
-    ...getIntelligentTools()
+    ...getIntelligentTools(),
+    ...getHelperTools()
   ];
 
   // Create handler map
@@ -77,6 +80,11 @@ export async function registerAllTools(server: Server, config: Config): Promise<
   
   // Register intelligent handlers
   registerIntelligentHandlers(handlers);
+  
+  // Register helper handlers
+  handlers.set('get-full-content-by-path', async (params: any, ctx: ToolContext) => {
+    return executeGetFullContentByPath(ctx.config, params);
+  });
 
   // Register capabilities
   server.registerCapabilities({

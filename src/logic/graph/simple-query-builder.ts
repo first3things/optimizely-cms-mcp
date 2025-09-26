@@ -54,9 +54,25 @@ export class SimpleQueryBuilder {
    * Get content by ID/key
    * Example: "fe8be9de-7160-48a8-a16f-5fcdd25b04f9"
    */
-  buildGetContentQuery(id: string): string {
+  buildGetContentQuery(id: string, includeFields?: string[]): string {
     // Extract just the GUID if the ID has suffixes
     const key = id.split('_')[0];
+    
+    // Build field selections if requested
+    let additionalFields = '';
+    if (includeFields && includeFields.length > 0) {
+      // Add type-specific fields using inline fragments
+      additionalFields = `
+            ... on ArticlePage {
+              ${this.buildFieldSelection(includeFields)}
+            }
+            ... on StandardPage {
+              ${this.buildFieldSelection(includeFields)}
+            }
+            ... on _Page {
+              ${this.buildFieldSelection(includeFields)}
+            }`;
+    }
     
     const query = `
       query GetContent($key: String!) {
@@ -80,13 +96,44 @@ export class SimpleQueryBuilder {
               published
               lastModified
               status
-            }
+            }${additionalFields}
           }
         }
       }
     `;
     
     return this.cleanQuery(query);
+  }
+
+  /**
+   * Build field selection handling complex types
+   */
+  private buildFieldSelection(fields: string[]): string {
+    return fields.map(field => {
+      // Handle nested fields like SeoSettings.MetaTitle
+      if (field.includes('.')) {
+        const parts = field.split('.');
+        const parent = parts[0];
+        const children = parts.slice(1).join('.');
+        return `${parent} { ${children} }`;
+      }
+      
+      // Handle known complex fields that need subfields
+      if (field === 'Body' || field.toLowerCase().includes('richtext')) {
+        return `${field}`;  // Just the field name, let GraphQL handle the error
+      }
+      
+      if (field === 'PromoImage' || field.toLowerCase().includes('image')) {
+        return `${field} { url { default } }`;
+      }
+      
+      if (field === 'SeoSettings') {
+        return `${field} { MetaTitle MetaDescription }`;
+      }
+      
+      // Simple fields
+      return field;
+    }).join('\n              ');
   }
 
   /**

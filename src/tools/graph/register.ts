@@ -1,12 +1,18 @@
 /**
  * Optimizely Graph Tools
  * 
+ * ⚠️ IMPORTANT: Graph tools return METADATA ONLY - no composition/visual builder data
+ * For full content structure including composition, use content-get (CMA)
+ * 
  * RECOMMENDED WORKFLOW:
  * 1. Use graph-search FIRST to find content (e.g., search "home" for homepage)
- * 2. Use graph-get-content or graph-get-content-by-path to get full details
- * 3. Only use graph-query for complex custom queries
+ * 2. Use graph-get-content or graph-get-content-by-path to get metadata
+ * 3. Use content-get (CMA) with the returned ID for full content structure
+ * 4. Only use graph-query for complex custom queries
  * 
- * For homepage: Use graph-get-content-by-path with path="/"
+ * Graph vs CMA:
+ * - Graph tools: Fast, metadata, search, routing info
+ * - CMA tools (content-*): Full structure, composition, editing
  */
 
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
@@ -31,7 +37,7 @@ export function getGraphTools(): Tool[] {
   return [
     {
       name: 'graph-query',
-      description: 'Execute custom GraphQL queries. ONLY USE THIS if other tools don\'t work.\n\nPrefer these tools instead:\n- graph-search: Find any content\n- graph-get-content: Get content by ID\n- graph-get-content-by-path: Get content by URL path\n\nThis tool is for complex custom queries only.',
+      description: 'Execute custom GraphQL queries. ONLY USE THIS if other tools don\'t work.\n\n⚠️ Returns METADATA ONLY - no composition/visual builder data.\n\nPrefer these tools instead:\n- graph-search: Find any content (metadata only)\n- graph-get-content: Get content by ID (metadata only)\n- graph-get-content-by-path: Get content by URL path (metadata only)\n- content-get: Get FULL content including composition (CMA)\n\nThis tool is for complex custom queries only.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -69,7 +75,7 @@ export function getGraphTools(): Tool[] {
     },
     {
       name: 'graph-search',
-      description: 'Search for content in Optimizely Graph. USE THIS FIRST to find pages, articles, or any content.\n\nExamples:\n- Search "home" to find the homepage\n- Search "about" to find about pages\n- Search "article" to find articles\n- Search "product" to find product pages\n\nSearches in: displayName, name, and full text content.',
+      description: 'Search for content in Optimizely Graph. USE THIS FIRST to find pages, articles, or any content.\n\n⚠️ IMPORTANT: Returns METADATA ONLY - no composition/visual builder data.\nFor full content structure including composition, use content-get (CMA) after finding content.\n\nExamples:\n- Search "home" to find the homepage\n- Search "about" to find about pages\n- Search "article" to find articles\n- Search "product" to find product pages\n\nSearches in: displayName, name, and full text content.\n\nWhen to use:\n- Finding content by keywords\n- Listing content of specific types\n- Getting basic content information',
       inputSchema: {
         type: 'object',
         properties: {
@@ -198,7 +204,7 @@ export function getGraphTools(): Tool[] {
     },
     {
       name: 'graph-get-content',
-      description: 'Get full content details by ID/key. Use AFTER graph-search to get complete content.\n\nExamples:\n- ID: "fe8be9de-7160-48a8-a16f-5fcdd25b04f9"\n- ID with suffix: "fe8be9de-7160-48a8-a16f-5fcdd25b04f9_en_Published" (suffix will be stripped automatically)\n\nReturns: Complete content with metadata, URL, and all fields.',
+      description: 'Get content details by ID/key from Optimizely Graph.\n\n⚠️ IMPORTANT: Returns METADATA and basic fields ONLY - no composition/visual builder data.\nFor full content structure including composition, use content-get (CMA) with the same ID.\n\nExamples:\n- ID: "fe8be9de-7160-48a8-a16f-5fcdd25b04f9"\n- ID with suffix: "fe8be9de-7160-48a8-a16f-5fcdd25b04f9_en_Published" (suffix will be stripped)\n\nReturns: Content with metadata, URL, and basic fields.\n\nWhen to use:\n- Getting metadata and basic properties\n- Retrieving URL and routing information\n- When composition data is NOT needed\n\nWhen NOT to use:\n- Need composition/visual builder structure → use content-get\n- Need to update content → use content-get then content-update',
       inputSchema: {
         type: 'object',
         properties: {
@@ -226,7 +232,7 @@ export function getGraphTools(): Tool[] {
     },
     {
       name: 'graph-get-content-by-path',
-      description: 'Get content by its URL path. USE THIS FOR HOMEPAGE or when you know the exact URL.\n\nExamples:\n- Homepage: path="/"\n- About page: path="/about" or path="/about/"\n- Article: path="/articles/my-article"\n- Localized: path="/en/products/item-1" with locale="en"\n\nReturns: Content at that exact path.',
+      description: 'Get content by URL path from Optimizely Graph.\n\n⚠️ IMPORTANT: Returns METADATA ONLY - no composition/visual builder data.\nFor full content structure including composition, use content-get (CMA) with the returned ID.\n\nExamples:\n- Homepage: path="/"\n- About page: path="/about" or path="/about/"\n- Article: path="/articles/my-article"\n- Localized: path="/en/products/item-1" with locale="en"\n\nReturns: Content metadata at that exact path.\n\nTypical workflow for getting full content:\n1. Call: graph-get-content-by-path {"path": "/"}\n2. Extract ID from response: _metadata.key (e.g., "fe8be9de716048a8a16f5fcdd25b04f9")\n3. Call: content-get {"contentId": "fe8be9de716048a8a16f5fcdd25b04f9"}\n\nWhen to use:\n- Finding content by URL\n- Getting content ID from a known path\n- Retrieving basic page information\n\nWhen NOT to use:\n- Need composition/visual builder data → use this to get ID, then content-get\n- Need to edit content → use this to get ID, then content-get/content-update',
       inputSchema: {
         type: 'object',
         properties: {

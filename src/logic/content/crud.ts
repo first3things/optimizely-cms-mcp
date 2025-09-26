@@ -319,7 +319,7 @@ export async function executeContentGet(
     const { contentId, language, version } = params;
     
     if (!contentId) {
-      throw new ValidationError('Content ID is required');
+      throw new ValidationError('Content ID is required. Pass it as "contentId" parameter, e.g., {"contentId": "fe8be9de716048a8a16f5fcdd25b04f9"}');
     }
     
     const client = new OptimizelyContentClient(config);
