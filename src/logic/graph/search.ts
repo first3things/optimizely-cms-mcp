@@ -68,15 +68,26 @@ export async function executeGraphGetContent(
     const validatedParams = validateInput(GetContentParamsSchema, params);
     const client = new OptimizelyGraphClient(config);
     
+    // Extract the key from IDs that include locale and status suffixes
+    // e.g., "41a8d47c-260b-4126-8336-cbd6708b452c_en_Published" -> "41a8d47c260b41268336cbd6708b452c"
+    let contentKey = validatedParams.id;
+    if (contentKey.includes('_')) {
+      // Remove suffixes and dashes from the key
+      contentKey = contentKey.split('_')[0].replace(/-/g, '');
+    } else if (contentKey.includes('-')) {
+      // Just remove dashes if no suffixes
+      contentKey = contentKey.replace(/-/g, '');
+    }
+    
     const query = buildGetContentQuery({
-      id: validatedParams.id,
+      id: contentKey,
       locale: validatedParams.locale,
       fields: validatedParams.fields,
       includeRelated: validatedParams.includeRelated
     });
 
     const variables = {
-      id: validatedParams.id,
+      id: contentKey,
       locale: validatedParams.locale
     };
 

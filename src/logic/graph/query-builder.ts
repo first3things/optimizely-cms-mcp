@@ -256,7 +256,17 @@ function buildWhereClause(params: {
   const conditions: string[] = [];
 
   if (params.searchTerm) {
-    conditions.push(`_fulltext: { contains: "${params.searchTerm}" }`);
+    // Optimizely Graph requires searching in specific fields
+    // Search across multiple common fields for better coverage
+    conditions.push(`_or: [
+      { _metadata: { displayName: { contains: "${params.searchTerm}" } } },
+      { _metadata: { name: { contains: "${params.searchTerm}" } } },
+      { Heading: { contains: "${params.searchTerm}" } },
+      { SubHeading: { contains: "${params.searchTerm}" } },
+      { Title: { contains: "${params.searchTerm}" } },
+      { MetaTitle: { contains: "${params.searchTerm}" } },
+      { MetaDescription: { contains: "${params.searchTerm}" } }
+    ]`);
   }
 
   if (params.types && params.types.length > 0) {
