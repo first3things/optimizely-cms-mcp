@@ -260,8 +260,9 @@ export abstract class BaseCMSAdapter implements CMSAdapter {
     const errors: ValidationError[] = [];
     const warnings: ValidationWarning[] = [];
 
-    // Check required fields
-    for (const requiredField of schema.required) {
+    // Check required fields - ensure it's an array
+    const requiredFields = Array.isArray(schema.required) ? schema.required : [];
+    for (const requiredField of requiredFields) {
       const value = this.getFieldValue(content, requiredField);
       if (value === undefined || value === null || value === '') {
         errors.push({
@@ -445,6 +446,6 @@ export abstract class BaseCMSAdapter implements CMSAdapter {
     context?: Record<string, any>
   ): Promise<boolean> {
     const schema = await this.getContentTypeSchema(contentType);
-    return schema.required.includes(fieldPath);
+    return Array.isArray(schema.required) && schema.required.includes(fieldPath);
   }
 }

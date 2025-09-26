@@ -1,3 +1,14 @@
+/**
+ * Optimizely Graph Tools
+ * 
+ * RECOMMENDED WORKFLOW:
+ * 1. Use graph-search FIRST to find content (e.g., search "home" for homepage)
+ * 2. Use graph-get-content or graph-get-content-by-path to get full details
+ * 3. Only use graph-query for complex custom queries
+ * 
+ * For homepage: Use graph-get-content-by-path with path="/"
+ */
+
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { ToolContext } from '../../types/tools.js';
 import { getGraphConfig } from '../../config.js';
@@ -20,7 +31,7 @@ export function getGraphTools(): Tool[] {
   return [
     {
       name: 'graph-query',
-      description: 'Execute arbitrary GraphQL query against Optimizely Graph',
+      description: 'Execute custom GraphQL queries. Use OTHER TOOLS FIRST (graph-search, graph-get-content) for common operations. Only use this for complex queries or when other tools don\'t meet your needs.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -58,7 +69,7 @@ export function getGraphTools(): Tool[] {
     },
     {
       name: 'graph-search',
-      description: 'Search content using full-text search',
+      description: 'Search for content in Optimizely Graph. USE THIS FIRST to find pages, articles, or any content before using other graph tools. Searches in displayName, heading, title, and metadata fields. Example: search for "home" to find homepage, "article" to find articles, etc.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -187,7 +198,7 @@ export function getGraphTools(): Tool[] {
     },
     {
       name: 'graph-get-content',
-      description: 'Get content by ID or key with field selection',
+      description: 'Get full content details by ID/key. Use AFTER graph-search to get complete content. Note: If ID has suffixes like _en_Published, they will be handled automatically.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -215,7 +226,7 @@ export function getGraphTools(): Tool[] {
     },
     {
       name: 'graph-get-content-by-path',
-      description: 'Get content by URL path',
+      description: 'Get content by its URL path (e.g., "/" for homepage, "/articles/my-article/"). Useful when you know the page URL.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -239,7 +250,7 @@ export function getGraphTools(): Tool[] {
     },
     {
       name: 'graph-get-children',
-      description: 'Get child content items',
+      description: 'Get child content items (Note: This may not work in Optimizely Graph - use graph-search with appropriate filters instead)',
       inputSchema: {
         type: 'object',
         properties: {

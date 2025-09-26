@@ -4,9 +4,13 @@ import { getGraphConfig, getCMAConfig } from '../../config.js';
 import {
   executeFindContentByName,
   executeGetContentWithDetails,
-  executeIntelligentCreate,
   executeContentWizard
 } from '../../logic/content/intelligent-create.js';
+import {
+  executeGetContentTypes,
+  executeGetFieldsForType,
+  executeIntelligentQuery
+} from '../../logic/graph/intelligent-tools.js';
 
 export function getIntelligentTools(): Tool[] {
   return [
@@ -50,50 +54,8 @@ export function getIntelligentTools(): Tool[] {
       }
     },
     {
-      name: 'content_create_under',
-      description: 'Intelligently create content under a parent by name (e.g., "create under Home")',
-      inputSchema: {
-        type: 'object',
-        properties: {
-          parentName: {
-            type: 'string',
-            description: 'Name of parent content (e.g., "Home", "News Section")'
-          },
-          contentType: {
-            type: 'string',
-            description: 'Content type to create (e.g., "StandardPage", "ArticlePage")'
-          },
-          name: {
-            type: 'string',
-            description: 'Internal name for the new content'
-          },
-          displayName: {
-            type: 'string',
-            description: 'Display name for the new content'
-          },
-          properties: {
-            type: 'object',
-            description: 'Content properties',
-            additionalProperties: true
-          },
-          language: {
-            type: 'string',
-            description: 'Language code',
-            default: 'en'
-          },
-          autoConfirm: {
-            type: 'boolean',
-            description: 'Auto-select if multiple parents found',
-            default: false
-          }
-        },
-        required: ['parentName', 'contentType', 'name'],
-        additionalProperties: false
-      }
-    },
-    {
       name: 'content_creation_wizard',
-      description: 'RECOMMENDED: Interactive wizard for content creation. Uses intelligent field analysis to populate required fields. Handles parent resolution, content type validation, and smart field population. Start with step="find-parent" and parentName="Home" (or desired parent).',
+      description: 'RECOMMENDED: Interactive wizard for content creation. Intelligently discovers your content types and their fields. Handles parent resolution, validation, and smart field population based on your CMS schema. Start with step="find-parent".',
       inputSchema: {
         type: 'object',
         properties: {
@@ -112,7 +74,7 @@ export function getIntelligentTools(): Tool[] {
           },
           contentType: {
             type: 'string',
-            description: 'Content type (for create-content step)'
+            description: 'Content type from your CMS (for create-content step)'
           },
           name: {
             type: 'string',
@@ -124,10 +86,110 @@ export function getIntelligentTools(): Tool[] {
           },
           properties: {
             type: 'object',
-            description: 'Content properties (for create-content step)',
+            description: 'Content properties. The wizard will help you understand required fields for your content type.',
             additionalProperties: true
           }
         },
+        additionalProperties: false
+      }
+    },
+    {
+      name: 'graph_discover_types',
+      description: 'Discover all available content types in the CMS dynamically from the GraphQL schema',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+        additionalProperties: false
+      }
+    },
+    {
+      name: 'graph_discover_fields',
+      description: 'Discover all available fields for a specific content type',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          typeName: {
+            type: 'string',
+            description: 'The content type name to get fields for'
+          }
+        },
+        required: ['typeName'],
+        additionalProperties: false
+      }
+    },
+    {
+      name: 'graph_intelligent_query',
+      description: 'Execute intelligent GraphQL queries that automatically discover and use available fields. No hardcoded field names!',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          operation: {
+            type: 'string',
+            enum: ['search', 'getContent', 'getByPath', 'facetedSearch', 'related'],
+            description: 'The operation to perform'
+          },
+          searchTerm: {
+            type: 'string',
+            description: 'Search term (required for search operation)'
+          },
+          contentId: {
+            type: 'string',
+            description: 'Content ID (required for getContent and related operations)'
+          },
+          path: {
+            type: 'string',
+            description: 'Content path (required for getByPath operation)'
+          },
+          contentTypes: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Filter by content types'
+          },
+          locale: {
+            type: 'string',
+            description: 'Language/locale'
+          },
+          limit: {
+            type: 'integer',
+            description: 'Maximum results'
+          },
+          skip: {
+            type: 'integer',
+            description: 'Skip results for pagination'
+          },
+          includeAllFields: {
+            type: 'boolean',
+            description: 'Include all available fields in the response'
+          },
+          maxDepth: {
+            type: 'integer',
+            description: 'Maximum depth for nested fields',
+            default: 1
+          },
+          direction: {
+            type: 'string',
+            enum: ['incoming', 'outgoing'],
+            description: 'Direction for related content'
+          },
+          facets: {
+            type: 'object',
+            description: 'Facet configuration for faceted search',
+            additionalProperties: {
+              type: 'object',
+              properties: {
+                field: { type: 'string' },
+                limit: { type: 'integer' }
+              },
+              required: ['field']
+            }
+          },
+          filters: {
+            type: 'object',
+            description: 'Filters to apply',
+            additionalProperties: true
+          }
+        },
+        required: ['operation'],
         additionalProperties: false
       }
     }
@@ -148,11 +210,19 @@ export function registerIntelligentHandlers(
     executeGetContentWithDetails(graphConfig(context), params)
   );
   
-  handlers.set('content_create_under', async (params, context) => 
-    executeIntelligentCreate(graphConfig(context), cmaConfig(context), params)
-  );
-  
   handlers.set('content_creation_wizard', async (params, context) => 
     executeContentWizard(graphConfig(context), cmaConfig(context), params)
+  );
+  
+  handlers.set('graph_discover_types', async (_params, context) => 
+    executeGetContentTypes(graphConfig(context))
+  );
+  
+  handlers.set('graph_discover_fields', async (params, context) => 
+    executeGetFieldsForType(graphConfig(context), params)
+  );
+  
+  handlers.set('graph_intelligent_query', async (params, context) => 
+    executeIntelligentQuery(graphConfig(context), params)
   );
 }

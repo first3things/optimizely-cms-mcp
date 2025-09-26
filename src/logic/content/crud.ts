@@ -12,6 +12,7 @@ import { z } from 'zod';
 import { AdapterRegistry } from '../../adapters/registry.js';
 import { IntelligentFieldPopulator } from './intelligent-populator.js';
 import { getLogger } from '../../utils/logger.js';
+import { SchemaFieldDiscovery } from './schema-field-discovery.js';
 
 // Validation schemas
 // Removed unused ContentReferenceSchema
@@ -203,10 +204,26 @@ export async function executeContentCreate(
     const adapter = registry.getOptimizelyAdapter(config);
     const populator = new IntelligentFieldPopulator(adapter);
     
+    // Use dynamic field discovery instead of hardcoded mappings
+    const fieldDiscovery = new SchemaFieldDiscovery(config);
+    const mappingResult = await fieldDiscovery.mapFieldsDynamically(
+      contentTypeStr,
+      request.properties
+    );
+    const mappedProperties = mappingResult.mappedProperties;
+    
+    // Log mapping suggestions
+    if (mappingResult.mappingSuggestions.length > 0) {
+      logger.info('Field mapping suggestions applied:', mappingResult.mappingSuggestions);
+    }
+    if (mappingResult.unmappedFields.length > 0) {
+      logger.debug('Fields without direct mapping:', mappingResult.unmappedFields);
+    }
+    
     const populationContext = {
       contentType: contentTypeStr,
       displayName: request.displayName,
-      properties: request.properties,
+      properties: mappedProperties, // Use mapped properties
       container: containerGuid,
       locale: request.locale
     };
@@ -226,6 +243,15 @@ export async function executeContentCreate(
       logger.warn('Missing required fields after population:', populationResult.missingRequired);
       // Don't fail immediately - let the API validate
     }
+    
+    // Log the final request before sending
+    logger.info('Sending content creation request:', {
+      contentType: request.contentType,
+      displayName: request.displayName,
+      container: request.container,
+      locale: request.locale,
+      properties: request.properties
+    });
     
     // For localized content types, locale must be in the body
     // Create content in a single step

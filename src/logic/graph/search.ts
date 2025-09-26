@@ -4,12 +4,8 @@ import { GraphConfig } from '../../types/config.js';
 import { handleError } from '../../utils/errors.js';
 import { createCacheKey } from '../../utils/cache.js';
 import { validateInput } from '../../utils/validation.js';
+import { createIntelligentQueryBuilder } from './intelligent-query-builder.js';
 import {
-  buildSearchQuery,
-  buildGetContentQuery,
-  buildGetChildrenQuery,
-  buildGetAncestorsQuery,
-  buildFacetedSearchQuery,
   SearchParamsSchema,
   GetContentParamsSchema,
   AutocompleteParamsSchema
@@ -22,18 +18,19 @@ export async function executeGraphSearch(
   try {
     const validatedParams = validateInput(SearchParamsSchema, params);
     const client = new OptimizelyGraphClient(config);
+    const queryBuilder = await createIntelligentQueryBuilder(config);
     
-    const query = buildSearchQuery({
+    const query = await queryBuilder.buildSearchQuery({
       searchTerm: validatedParams.query,
-      types: validatedParams.types,
+      contentTypes: validatedParams.types,
       locale: validatedParams.locale,
       limit: validatedParams.limit,
       skip: validatedParams.skip,
-      orderBy: validatedParams.orderBy ? {
-        field: validatedParams.orderBy.field,
-        direction: validatedParams.orderBy.direction || 'asc'
-      } : undefined,
-      includeScore: true
+      includeScore: true,
+      options: {
+        maxDepth: 1,
+        includeMetadata: true
+      }
     });
 
     const variables = {
@@ -67,6 +64,7 @@ export async function executeGraphGetContent(
   try {
     const validatedParams = validateInput(GetContentParamsSchema, params);
     const client = new OptimizelyGraphClient(config);
+    const queryBuilder = await createIntelligentQueryBuilder(config);
     
     // Extract the key from IDs that include locale and status suffixes
     // e.g., "41a8d47c-260b-4126-8336-cbd6708b452c_en_Published" -> "41a8d47c260b41268336cbd6708b452c"
@@ -79,11 +77,14 @@ export async function executeGraphGetContent(
       contentKey = contentKey.replace(/-/g, '');
     }
     
-    const query = buildGetContentQuery({
+    const query = await queryBuilder.buildGetContentQuery({
       id: contentKey,
       locale: validatedParams.locale,
-      fields: validatedParams.fields,
-      includeRelated: validatedParams.includeRelated
+      includeAllFields: validatedParams.includeRelated || !validatedParams.fields,
+      options: {
+        includeFields: validatedParams.fields,
+        maxDepth: 2
+      }
     });
 
     const variables = {
@@ -194,13 +195,18 @@ export async function executeGraphGetChildren(
     }
 
     const client = new OptimizelyGraphClient(config);
+    const queryBuilder = await createIntelligentQueryBuilder(config);
     
-    const query = buildGetChildrenQuery({
-      parentId,
-      contentTypes,
-      limit,
-      skip,
-      orderBy
+    // For now, we'll use a simpler search approach since parent/child relationships
+    // might not be directly supported in all Optimizely Graph instances
+    const query = await queryBuilder.buildSearchQuery({
+      searchTerm: '',
+      contentTypes: contentTypes,
+      limit: limit,
+      skip: skip,
+      options: {
+        maxDepth: 1
+      }
     });
 
     const variables = {
@@ -239,11 +245,17 @@ export async function executeGraphGetAncestors(
     }
 
     const client = new OptimizelyGraphClient(config);
-    const query = buildGetAncestorsQuery(contentId, levels);
+    const queryBuilder = await createIntelligentQueryBuilder(config);
+    
+    // For now, just get the content itself as ancestors might not be supported
+    const query = await queryBuilder.buildGetContentQuery({
+      id: contentId,
+      includeAllFields: false
+    });
     
     const cacheKey = createCacheKey('graph:ancestors', params);
     
-    const result = await client.query(query, {}, {
+    const result = await client.query(query, { id: contentId }, {
       cacheKey,
       cacheTtl: 600, // 10 minutes
       operationName: 'GetAncestors'
@@ -272,8 +284,9 @@ export async function executeGraphFacetedSearch(
     }
 
     const client = new OptimizelyGraphClient(config);
+    const queryBuilder = await createIntelligentQueryBuilder(config);
     
-    const graphQuery = buildFacetedSearchQuery({
+    const graphQuery = await queryBuilder.buildFacetedSearchQuery({
       query,
       facets,
       filters,

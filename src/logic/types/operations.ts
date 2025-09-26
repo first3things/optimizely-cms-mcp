@@ -65,15 +65,19 @@ export async function executeTypeGet(
     const type = await client.get<ContentType>(`/contentTypes/${params.typeId}`);
     
     // Enhance with additional metadata
-    const properties = Object.values(type.properties || {});
+    const properties = Array.isArray(type.properties) 
+      ? type.properties 
+      : Object.values(type.properties || {});
     const enhancedType = {
       ...type,
       summary: {
         totalProperties: properties.length,
-        requiredProperties: properties.filter(p => p.required).length,
-        searchableProperties: properties.filter(p => p.searchable).length,
+        requiredProperties: properties.filter(p => p && p.required).length,
+        searchableProperties: properties.filter(p => p && p.searchable).length,
         propertyTypes: properties.reduce((acc, prop) => {
-          acc[prop.dataType] = (acc[prop.dataType] || 0) + 1;
+          if (prop && prop.dataType) {
+            acc[prop.dataType] = (acc[prop.dataType] || 0) + 1;
+          }
           return acc;
         }, {} as Record<string, number>)
       }
@@ -104,23 +108,27 @@ export async function executeTypeGetSchema(
     const type = await client.get<ContentType>(`/contentTypes/${params.typeId}`);
     
     // Convert to JSON Schema format
-    const properties = Object.values(type.properties || {});
+    const properties = Array.isArray(type.properties)
+      ? type.properties
+      : Object.values(type.properties || {});
     const schema = {
       $schema: 'http://json-schema.org/draft-07/schema#',
       title: type.displayName,
       description: type.description,
       type: 'object',
       properties: properties.reduce((acc, prop) => {
-        acc[prop.name] = {
-          title: prop.displayName,
-          description: prop.description,
-          type: mapDataTypeToJsonType(prop.dataType),
-          ...(prop.required && { required: true }),
-          ...(prop.settings && { metadata: prop.settings })
-        };
+        if (prop && prop.name) {
+          acc[prop.name] = {
+            title: prop.displayName,
+            description: prop.description,
+            type: mapDataTypeToJsonType(prop.dataType),
+            ...(prop.required && { required: true }),
+            ...(prop.settings && { metadata: prop.settings })
+          };
+        }
         return acc;
       }, {} as Record<string, any>),
-      required: properties.filter(p => p.required).map(p => p.name),
+      required: properties.filter(p => p && p.required && p.name).map(p => p.name),
       additionalProperties: false
     };
     

@@ -35,6 +35,16 @@ export const contentTypeAnalyzerTool: ToolDefinition = {
       // Get schema
       const schema = await adapter.getContentTypeSchema(validated.contentType);
       
+      // Log schema structure for debugging
+      logger.debug(`Schema structure for ${validated.contentType}:`, {
+        hasProperties: !!schema.properties,
+        propertiesIsArray: Array.isArray(schema.properties),
+        propertiesLength: Array.isArray(schema.properties) ? schema.properties.length : 'N/A',
+        hasRequired: !!schema.required,
+        requiredIsArray: Array.isArray(schema.required),
+        hasDefaults: !!schema.defaults
+      });
+      
       // Get field defaults
       const defaults = await adapter.getFieldDefaults(validated.contentType);
       
@@ -43,14 +53,18 @@ export const contentTypeAnalyzerTool: ToolDefinition = {
         contentType: schema.name,
         displayName: schema.displayName,
         baseType: schema.baseType,
-        totalProperties: schema.properties.length,
-        requiredFields: schema.required.length,
+        totalProperties: Array.isArray(schema.properties) ? schema.properties.length : 0,
+        requiredFields: Array.isArray(schema.required) ? schema.required.length : 0,
         
         // Required fields analysis
-        requiredFieldsDetails: schema.required.map(fieldPath => {
-          const prop = schema.properties.find(p => p.path === fieldPath);
-          const defaultValue = schema.defaults[fieldPath];
-          const fieldDefault = defaults.find(d => d.field === fieldPath);
+        requiredFieldsDetails: (Array.isArray(schema.required) ? schema.required : []).map(fieldPath => {
+          const prop = Array.isArray(schema.properties) 
+            ? schema.properties.find(p => p.path === fieldPath)
+            : undefined;
+          const defaultValue = schema.defaults?.[fieldPath];
+          const fieldDefault = Array.isArray(defaults) 
+            ? defaults.find(d => d.field === fieldPath)
+            : undefined;
           
           return {
             path: fieldPath,
@@ -65,35 +79,46 @@ export const contentTypeAnalyzerTool: ToolDefinition = {
         
         // All fields with categorization
         fieldsByCategory: {
-          seo: schema.properties.filter(p => p.path.toLowerCase().includes('seo')),
-          metadata: schema.properties.filter(p => 
-            p.path.toLowerCase().includes('meta') || 
-            p.path.toLowerCase().includes('created') ||
-            p.path.toLowerCase().includes('modified')
-          ),
-          content: schema.properties.filter(p => 
-            !p.path.toLowerCase().includes('seo') && 
-            !p.path.toLowerCase().includes('meta') &&
-            !p.path.toLowerCase().includes('created') &&
-            !p.path.toLowerCase().includes('modified')
-          )
+          seo: Array.isArray(schema.properties) 
+            ? schema.properties.filter(p => p.path?.toLowerCase().includes('seo'))
+            : [],
+          metadata: Array.isArray(schema.properties)
+            ? schema.properties.filter(p => 
+                p.path?.toLowerCase().includes('meta') || 
+                p.path?.toLowerCase().includes('created') ||
+                p.path?.toLowerCase().includes('modified')
+              )
+            : [],
+          content: Array.isArray(schema.properties)
+            ? schema.properties.filter(p => 
+                p.path && 
+                !p.path.toLowerCase().includes('seo') && 
+                !p.path.toLowerCase().includes('meta') &&
+                !p.path.toLowerCase().includes('created') &&
+                !p.path.toLowerCase().includes('modified')
+              )
+            : []
         },
         
         // Smart defaults
-        smartDefaults: defaults.map(d => ({
-          field: d.field,
-          value: d.value,
-          conditional: !!d.condition,
-          description: `Smart default for ${d.field}`
-        })),
+        smartDefaults: Array.isArray(defaults) 
+          ? defaults.map(d => ({
+              field: d.field,
+              value: d.value,
+              conditional: !!d.condition,
+              description: `Smart default for ${d.field}`
+            }))
+          : [],
         
         // Validation rules
-        validationRules: schema.properties
-          .filter(p => p.validation)
-          .map(p => ({
-            field: p.path,
-            rule: p.validation
-          }))
+        validationRules: Array.isArray(schema.properties)
+          ? schema.properties
+              .filter(p => p.validation)
+              .map(p => ({
+                field: p.path,
+                rule: p.validation
+              }))
+          : []
       };
       
       // Add examples if requested
@@ -140,16 +165,18 @@ async function generateExamplePayload(
   };
   
   // Add required fields with examples
-  for (const required of schema.required) {
-    const prop = schema.properties.find((p: any) => p.path === required);
+  for (const required of (Array.isArray(schema.required) ? schema.required : [])) {
+    const prop = Array.isArray(schema.properties) 
+      ? schema.properties.find((p: any) => p.path === required)
+      : undefined;
     if (!prop) continue;
     
     // Get suggested values
     const suggestions = await adapter.getSuggestedValues(required, contentType);
     
     // Set example value
-    const value = schema.defaults[required] || 
-                 suggestions[0] || 
+    const value = schema.defaults?.[required] || 
+                 (Array.isArray(suggestions) ? suggestions[0] : undefined) || 
                  getExampleForType(prop.type);
     
     setNestedValue(example.properties, required, value);
@@ -216,31 +243,31 @@ function formatAnalysisReport(analysis: any): string {
   lines.push(`## Field Categories`);
   lines.push(``);
   
-  if (analysis.fieldsByCategory.seo.length > 0) {
+  if (analysis.fieldsByCategory?.seo?.length > 0) {
     lines.push(`### SEO Fields (${analysis.fieldsByCategory.seo.length})`);
     for (const field of analysis.fieldsByCategory.seo) {
-      lines.push(`- ${field.path} (${field.type})`);
+      lines.push(`- ${field.path || 'unknown'} (${field.type || 'unknown'})`);
     }
     lines.push(``);
   }
   
-  if (analysis.fieldsByCategory.metadata.length > 0) {
+  if (analysis.fieldsByCategory?.metadata?.length > 0) {
     lines.push(`### Metadata Fields (${analysis.fieldsByCategory.metadata.length})`);
     for (const field of analysis.fieldsByCategory.metadata) {
-      lines.push(`- ${field.path} (${field.type})`);
+      lines.push(`- ${field.path || 'unknown'} (${field.type || 'unknown'})`);
     }
     lines.push(``);
   }
   
-  if (analysis.fieldsByCategory.content.length > 0) {
+  if (analysis.fieldsByCategory?.content?.length > 0) {
     lines.push(`### Content Fields (${analysis.fieldsByCategory.content.length})`);
     for (const field of analysis.fieldsByCategory.content) {
-      lines.push(`- ${field.path} (${field.type})`);
+      lines.push(`- ${field.path || 'unknown'} (${field.type || 'unknown'})`);
     }
     lines.push(``);
   }
   
-  if (analysis.smartDefaults.length > 0) {
+  if (analysis.smartDefaults?.length > 0) {
     lines.push(`## Smart Defaults`);
     lines.push(``);
     for (const def of analysis.smartDefaults) {
@@ -249,7 +276,7 @@ function formatAnalysisReport(analysis: any): string {
     lines.push(``);
   }
   
-  if (analysis.validationRules.length > 0) {
+  if (analysis.validationRules?.length > 0) {
     lines.push(`## Validation Rules`);
     lines.push(``);
     for (const rule of analysis.validationRules) {

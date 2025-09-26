@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { validateInput, sanitizeInput } from '../../utils/validation.js';
 import { AdapterRegistry } from '../../adapters/registry.js';
 import { IntelligentFieldPopulator } from './intelligent-populator.js';
+import { SchemaFieldDiscovery } from './schema-field-discovery.js';
 
 // Safe JSON parser to handle non-JSON responses
 function safeJsonParse(text: string): { ok: boolean; data: any } {
@@ -203,48 +204,29 @@ export async function executeIntelligentCreate(
     
     logger.info('Starting intelligent content creation', { parentName: validatedParams.parentName });
     
-    // Step 1: Find the parent content by name - using _Content
-    const searchQuery = `
-      query FindParent($name: String!) {
-        _Content(
-          where: { 
-            _or: [
-              { Name: { eq: $name } }
-              { _metadata: { displayName: { eq: $name } } }
-              { Name: { contains: $name } }
-            ]
-          }
-          limit: 5
-        ) {
-          items {
-            _metadata {
-              key
-              displayName
-              contentType
-            }
-            ContentLink {
-              Id
-              GuidValue
-            }
-            Name
-            ContentType
-            Url
-            RelativePath
-            ... on _IContent {
-              Ancestors {
-                Name
-              }
-            }
-          }
-          total
-        }
+    // Step 1: Find the parent content by name - using dynamic query builder
+    const { createIntelligentQueryBuilder } = await import('../graph/intelligent-query-builder.js');
+    const queryBuilder = await createIntelligentQueryBuilder(graphConfig);
+    
+    // Build a dynamic search query that doesn't assume specific fields exist
+    const searchQuery = await queryBuilder.buildSearchQuery({
+      searchTerm: validatedParams.parentName,
+      limit: 5,
+      options: {
+        includeMetadata: true,
+        maxDepth: 1
       }
-    `;
+    });
     
-    const searchResult = await graphClient.query<any>(searchQuery, { name: validatedParams.parentName });
-    const candidates = searchResult._Content?.items || [];
+    const searchResult = await graphClient.query<any>(searchQuery, { 
+      limit: 5,
+      skip: 0 
+    });
     
-    if (candidates.length === 0) {
+    // Access results dynamically based on what's returned
+    const items = searchResult.content?.items || searchResult._Content?.items || [];
+    
+    if (items.length === 0) {
       return {
         content: [{
           type: 'text',
@@ -258,35 +240,51 @@ export async function executeIntelligentCreate(
     }
     
     // If multiple candidates, show options
-    if (candidates.length > 1 && !validatedParams.autoConfirm) {
+    if (items.length > 1 && !validatedParams.autoConfirm) {
       return {
         content: [{
           type: 'text',
           text: JSON.stringify({
             success: false,
             requiresSelection: true,
-            message: `Found ${candidates.length} items matching "${validatedParams.parentName}". Please be more specific:`,
-            options: candidates.map((item: any) => ({
-              id: item.ContentLink.Id,
-              guid: item._metadata?.key || item.ContentLink.GuidValue,
-              name: item.Name,
-              displayName: item._metadata?.displayName || item.Name,
-              path: item.Ancestors?.map((a: any) => a.Name).join(' > ') || '/',
-              contentType: item.ContentType?.[0] || item.ContentType
+            message: `Found ${items.length} items matching "${validatedParams.parentName}". Please be more specific:`,
+            options: items.map((item: any) => ({
+              // Use dynamic field access instead of hardcoded paths
+              guid: item._metadata?.key,
+              displayName: item._metadata?.displayName,
+              types: item._metadata?.types,
+              url: item._metadata?.url?.hierarchical,
+              locale: item._metadata?.locale
             })),
-            suggestion: "Use the content ID or be more specific with the parent name"
+            suggestion: "Use the content GUID or be more specific with the parent name"
           }, null, 2)
         }]
       };
     }
     
     // Use the first (or only) match
-    const parent = candidates[0];
-    const parentGuid = parent._metadata?.key || parent.ContentLink.GuidValue;
-    const parentPath = parent.Ancestors?.map((a: any) => a.Name).join(' > ') || '/';
+    const parent = items[0];
+    const parentGuid = parent._metadata?.key;
+    if (!parentGuid) {
+      throw new ValidationError('Selected parent content does not have a valid GUID/key');
+    }
     
-    // Step 2: Create the content under the found parent
-    const createRequest = {
+    // Step 2: First discover the schema and available fields
+    const fieldDiscovery = new SchemaFieldDiscovery(cmaConfig);
+    
+    // Show field guide in response
+    let fieldGuide = '';
+    try {
+      fieldGuide = await fieldDiscovery.getFieldGuide(validatedParams.contentType);
+    } catch (error) {
+      logger.warn('Could not fetch field guide:', error);
+    }
+    
+    // Step 3: Create the content under the found parent using the CRUD function
+    // Import and use the CRUD function which now handles dynamic field mapping
+    const { executeContentCreate } = await import('./crud.js');
+    
+    const createParams = {
       contentType: validatedParams.contentType,
       name: sanitizeInput(validatedParams.name) as string,
       displayName: validatedParams.displayName || validatedParams.name,
@@ -295,13 +293,22 @@ export async function executeIntelligentCreate(
       properties: sanitizeInput(validatedParams.properties) || {}
     };
     
-    logger.info('Creating content', { 
+    logger.info('Creating content with dynamic field mapping', { 
       parent: parent.Name, 
       parentGuid,
-      newContent: validatedParams.name 
+      newContent: validatedParams.name,
+      providedFields: Object.keys(createParams.properties)
     });
     
-    const createResult = await cmaClient.post('/content', createRequest);
+    const createResponse = await executeContentCreate(cmaConfig, createParams);
+    
+    // Parse the response
+    if (createResponse.isError) {
+      return createResponse; // Return the error as-is
+    }
+    
+    const createResultText = (createResponse.content?.[0] as any)?.text || '{}';
+    const createResult = JSON.parse(createResultText).content || {};
     
     return {
       content: [{
@@ -315,13 +322,15 @@ export async function executeIntelligentCreate(
             displayName: createResult.displayName
           },
           parent: {
-            id: parent.ContentLink.Id,
             guid: parentGuid,
-            name: parent.Name,
-            path: `${parentPath} > ${parent.Name}`
+            displayName: parent._metadata?.displayName,
+            types: parent._metadata?.types,
+            url: parent._metadata?.url?.hierarchical
           },
-          message: `Successfully created "${validatedParams.name}" under "${parent.Name}"`,
-          location: `${parentPath} > ${parent.Name} > ${validatedParams.name}`
+          message: `Successfully created "${validatedParams.name}" under "${parent._metadata?.displayName || 'parent'}"`,
+          location: parent._metadata?.url?.hierarchical ? `${parent._metadata.url.hierarchical}/${validatedParams.name}` : validatedParams.name,
+          fieldGuide: fieldGuide ? `\n\nField Guide:\n${fieldGuide}` : undefined,
+          tip: fieldGuide ? undefined : 'Use type-get-schema to discover available fields for this content type'
         }, null, 2)
       }]
     };
@@ -464,7 +473,7 @@ export async function executeContentWizard(
                   }
                 },
                 contentTypes: ['StandardPage', 'ArticlePage', 'NewsItem', 'BlogPost'],
-                tip: 'Consider using step="preview-content" first to see what fields will be populated'
+                tip: 'Use step="preview-content" to see available fields for the content type'
               }, null, 2)
             }]
           };
@@ -517,14 +526,17 @@ export async function executeContentWizard(
           };
         }
         
-        // Analyze and preview what will be created
-        const previewRegistry = AdapterRegistry.getInstance();
-        const previewAdapter = previewRegistry.getOptimizelyAdapter(cmaConfig);
-        const previewPopulator = new IntelligentFieldPopulator(previewAdapter);
+        // Use schema discovery to show actual available fields
+        const schemaDiscovery = new SchemaFieldDiscovery(cmaConfig);
         
-        let previewSchema;
+        let fieldGuide;
+        let discoveryResult;
         try {
-          previewSchema = await previewAdapter.getContentTypeSchema(stepParams.contentType);
+          fieldGuide = await schemaDiscovery.getFieldGuide(stepParams.contentType);
+          discoveryResult = await schemaDiscovery.discoverFields(
+            stepParams.contentType,
+            stepParams.properties || {}
+          );
         } catch (error) {
           return {
             content: [{
@@ -538,47 +550,27 @@ export async function executeContentWizard(
           };
         }
         
-        // Preview population
-        const previewContext = {
-          contentType: stepParams.contentType,
-          displayName: stepParams.displayName || stepParams.name,
-          properties: sanitizeInput(stepParams.properties) || {},
-          container: stepParams.parentGuid,
-          locale: stepParams.language || 'en'
-        };
-        
-        const previewResult = await previewPopulator.populateRequiredFields(previewContext);
-        
         return {
           content: [{
             type: 'text',
             text: JSON.stringify({
               wizard: 'content-creation',
               currentStep: 'preview',
-              preview: {
-                contentType: {
-                  name: previewSchema.name,
-                  displayName: previewSchema.displayName,
-                  baseType: previewSchema.baseType
-                },
-                willCreate: {
-                  name: stepParams.name,
-                  displayName: stepParams.displayName || stepParams.name,
-                  container: stepParams.parentGuid,
-                  parentName: stepParams.parentName
-                },
-                fields: {
-                  provided: Object.keys(stepParams.properties || {}),
-                  required: previewSchema.required,
-                  willPopulate: previewResult.suggestions.map((s: any) => ({
-                    field: s.field,
-                    reason: s.message,
-                    value: s.suggestedValue
-                  })),
-                  missing: previewResult.missingRequired
-                },
-                allFields: previewResult.populatedProperties
+              contentType: {
+                name: discoveryResult.schema.name,
+                displayName: discoveryResult.schema.displayName
               },
+              fieldGuide: fieldGuide,
+              willCreate: {
+                name: stepParams.name,
+                displayName: stepParams.displayName || stepParams.name,
+                container: stepParams.parentGuid,
+                parentName: stepParams.parentName
+              },
+              providedFields: Object.keys(stepParams.properties || {}),
+              availableFields: discoveryResult.availableFields,
+              requiredFields: discoveryResult.schema.requiredFields,
+              fieldMappingSuggestions: discoveryResult.suggestions,
               proceedToCreate: {
                 tool: 'content-wizard',
                 params: {
@@ -586,7 +578,7 @@ export async function executeContentWizard(
                   step: 'create-content'
                 }
               },
-              modifyFirst: 'Update the properties in your params before proceeding'
+              tip: 'Review the field guide above to see all available fields for this content type'
             }, null, 2)
           }]
         };
@@ -635,17 +627,26 @@ export async function executeContentWizard(
           };
         }
         
-        // Use the intelligent system to analyze and populate fields
-        logger.info(`Content wizard: Analyzing content type ${stepParams.contentType}`);
+        // Use schema discovery for dynamic field mapping
+        logger.info(`Content wizard: Discovering fields for ${stepParams.contentType}`);
         
-        const registry = AdapterRegistry.getInstance();
-        const adapter = registry.getOptimizelyAdapter(cmaConfig);
-        const populator = new IntelligentFieldPopulator(adapter);
+        const fieldDiscovery = new SchemaFieldDiscovery(cmaConfig);
         
-        // First, get the schema to understand required fields
-        let schema;
+        // Prepare initial properties
+        const userProperties = sanitizeInput(stepParams.properties) || {};
+        
+        logger.info('Content wizard: User provided properties', {
+          userProperties,
+          propertyKeys: Object.keys(userProperties)
+        });
+        
+        // Dynamically map fields based on actual schema
+        let mappingResult;
         try {
-          schema = await adapter.getContentTypeSchema(stepParams.contentType);
+          mappingResult = await fieldDiscovery.mapFieldsDynamically(
+            stepParams.contentType,
+            userProperties
+          );
         } catch (error) {
           return {
             content: [{
@@ -667,27 +668,39 @@ export async function executeContentWizard(
           };
         }
         
-        // Prepare initial properties
-        const initialProperties = sanitizeInput(stepParams.properties) || {};
+        logger.info('Content wizard: Dynamic field mapping result', {
+          mappedProperties: mappingResult.mappedProperties,
+          unmappedFields: mappingResult.unmappedFields,
+          suggestions: mappingResult.mappingSuggestions
+        });
         
-        // Use intelligent population to fill required fields
+        // Use intelligent population to fill any missing required fields
+        const registry = AdapterRegistry.getInstance();
+        const adapter = registry.getOptimizelyAdapter(cmaConfig);
+        const populator = new IntelligentFieldPopulator(adapter);
+        
         const populationContext = {
           contentType: stepParams.contentType,
           displayName: stepParams.displayName || stepParams.name,
-          properties: initialProperties,
+          properties: mappingResult.mappedProperties,
           container: stepParams.parentGuid,
           locale: stepParams.language || 'en'
         };
         
         const populationResult = await populator.populateRequiredFields(populationContext);
         
-        // Show what fields were populated
+        // Log field population details
         if (populationResult.suggestions.length > 0 || populationResult.missingRequired.length > 0) {
           logger.info('Content wizard field population:', {
             suggestions: populationResult.suggestions,
             missingRequired: populationResult.missingRequired
           });
         }
+        
+        logger.info('Content wizard: Final populated properties', {
+          populatedProperties: populationResult.populatedProperties,
+          propertyCount: Object.keys(populationResult.populatedProperties).length
+        });
         
         // Create the content using the CRUD function with intelligently populated fields
         const createParams = {
@@ -729,9 +742,12 @@ export async function executeContentWizard(
                 name: stepParams.parentName
               },
               message: result.message || `✅ Successfully created "${stepParams.name}" under "${stepParams.parentName}"!`,
+              fieldMappings: mappingResult.mappingSuggestions.length > 0 ?
+                mappingResult.mappingSuggestions.map(s => `${s.userField} → ${s.suggestedField} (${s.reason})`) :
+                ['All fields mapped directly'],
               fieldsPopulated: populationResult.suggestions.length > 0 ? 
                 populationResult.suggestions.map(s => `${s.field}: ${s.message}`) : 
-                ['All provided fields were used'],
+                ['All required fields provided'],
               nextSteps: [
                 "You can now update the content properties",
                 "Publish the content when ready",

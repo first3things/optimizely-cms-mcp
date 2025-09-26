@@ -88,7 +88,21 @@ export class OptimizelyAdapter extends BaseCMSAdapter {
 
       // Parse properties into our schema format, including component types
       const properties = await this.parsePropertiesWithComponents(response.properties || {});
-      const required = await this.extractRequiredFieldsWithComponents(response.properties || {});
+      
+      // Handle required fields - might come from schema or properties
+      let required: string[] = [];
+      
+      // Check if schema has a required array at top level
+      if (Array.isArray(response.required)) {
+        required = response.required;
+      } else if (response.required && typeof response.required === 'object') {
+        // Sometimes required might be an object, extract keys
+        required = Object.keys(response.required);
+      } else {
+        // Extract from properties
+        required = await this.extractRequiredFieldsWithComponents(response.properties || {});
+      }
+      
       const defaults = await this.extractDefaults(response.properties || {}, typeName);
 
       return {

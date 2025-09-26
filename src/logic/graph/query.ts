@@ -3,6 +3,7 @@ import { OptimizelyGraphClient } from '../../clients/graph-client.js';
 import { GraphConfig } from '../../types/config.js';
 import { handleError, ValidationError } from '../../utils/errors.js';
 import { validateGraphQLQuery } from '../../utils/validation.js';
+import { createIntelligentQueryBuilder } from './intelligent-query-builder.js';
 
 export async function executeGraphQuery(
   config: GraphConfig,
@@ -89,41 +90,21 @@ export async function executeGraphGetContentByPath(
     }
 
     const client = new OptimizelyGraphClient(config);
+    const queryBuilder = await createIntelligentQueryBuilder(config);
     
     // Normalize path
     const normalizedPath = params.path.startsWith('/') ? params.path : `/${params.path}`;
     
-    const fieldsSelection = params.fields 
-      ? params.fields.join('\n          ')
-      : '';
-
-    const query = `
-      query GetContentByPath($path: String!) {
-        content: _Content(
-          where: { 
-            _metadata: { 
-              url: { hierarchical: { eq: $path } }
-              locale: { eq: "en" }
-            }
-          }
-          limit: 1
-        ) {
-          items {
-            _metadata {
-              key
-              locale
-              displayName
-              types
-              url {
-                base
-                hierarchical
-              }
-            }${fieldsSelection ? `
-            ${fieldsSelection}` : ''}
-          }
-        }
+    // Build query using intelligent query builder
+    const query = await queryBuilder.buildGetContentByPathQuery({
+      path: normalizedPath,
+      locale: params.locale || 'en',
+      includeAllFields: !params.fields || params.fields.length === 0,
+      options: {
+        includeFields: params.fields,
+        maxDepth: 2
       }
-    `;
+    });
 
     const variables = {
       path: normalizedPath
@@ -170,68 +151,16 @@ export async function executeGraphGetRelated(
     }
 
     const client = new OptimizelyGraphClient(config);
+    const queryBuilder = await createIntelligentQueryBuilder(config);
     const direction = params.direction || 'outgoing';
     const limit = params.limit || 20;
     
-    const query = direction === 'outgoing' ? `
-      query GetOutgoingRelations($contentId: String!, $limit: Int) {
-        content: _Content(
-          where: { 
-            _or: [
-              { _metadata: { key: { eq: $contentId } } }
-              { _metadata: { guid: { eq: $contentId } } }
-            ]
-          }
-          limit: 1
-        ) {
-          items {
-            _metadata {
-              key
-              displayName
-            }
-            _references(limit: $limit) {
-              _metadata {
-                key
-                displayName
-                types
-              }
-              ... on _IContent {
-                _metadata {
-                  displayName
-                  guid
-                }
-              }
-            }
-          }
-        }
-      }
-    ` : `
-      query GetIncomingRelations($contentId: String!, $limit: Int) {
-        content: _Content(
-          where: {
-            _references: {
-              _metadata: { key: { eq: $contentId } }
-            }
-          }
-          limit: $limit
-        ) {
-          items {
-            _metadata {
-              key
-              displayName
-              types
-            }
-            ... on _IContent {
-              _metadata {
-                displayName
-                guid
-              }
-            }
-          }
-          total
-        }
-      }
-    `;
+    // Build query using intelligent query builder
+    const query = await queryBuilder.buildRelatedContentQuery({
+      contentId: params.contentId,
+      direction: direction,
+      limit: limit
+    });
 
     const variables = {
       contentId: params.contentId,

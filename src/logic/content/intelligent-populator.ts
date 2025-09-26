@@ -36,7 +36,12 @@ export class IntelligentFieldPopulator {
    * Intelligently populate required fields for content creation
    */
   async populateRequiredFields(context: PopulationContext): Promise<PopulationResult> {
-    this.logger.debug('Populating required fields', { contentType: context.contentType });
+    this.logger.info('IntelligentFieldPopulator.populateRequiredFields called', {
+      contentType: context.contentType,
+      providedProperties: context.properties,
+      propertyKeys: Object.keys(context.properties || {}),
+      propertyCount: Object.keys(context.properties || {}).length
+    });
     
     // Get schema for the content type
     const schema = await this.getSchemaWithCache(context.contentType);
@@ -46,8 +51,9 @@ export class IntelligentFieldPopulator {
     const missingRequired: string[] = [];
     const suggestions: PopulationResult['suggestions'] = [];
     
-    // Process each required field
-    for (const requiredField of schema.required) {
+    // Process each required field - ensure schema.required is an array
+    const requiredFields = Array.isArray(schema.required) ? schema.required : [];
+    for (const requiredField of requiredFields) {
       const fieldValue = this.getFieldValue(populatedProperties, requiredField);
       
       if (fieldValue === undefined || fieldValue === null || fieldValue === '') {
@@ -109,7 +115,9 @@ export class IntelligentFieldPopulator {
     context: PopulationContext,
     currentProperties: Record<string, any>
   ): Promise<{ value?: any; wasGenerated: boolean; message?: string }> {
-    const property = schema.properties.find(p => p.path === fieldPath);
+    const property = Array.isArray(schema.properties) 
+      ? schema.properties.find(p => p.path === fieldPath)
+      : undefined;
     if (!property) {
       return { wasGenerated: false };
     }
@@ -130,7 +138,7 @@ export class IntelligentFieldPopulator {
     }
     
     // Check if we have a default value in the schema
-    const defaultValue = schema.defaults[fieldPath];
+    const defaultValue = schema.defaults?.[fieldPath];
     if (defaultValue !== undefined) {
       return {
         value: defaultValue,
@@ -281,7 +289,9 @@ export class IntelligentFieldPopulator {
     ];
     
     for (const field of seoFields) {
-      const property = schema.properties.find(p => p.path === field.path);
+      const property = Array.isArray(schema.properties) 
+        ? schema.properties.find(p => p.path === field.path)
+        : undefined;
       if (property && !this.getFieldValue(properties, field.path)) {
         suggestions.push({
           field: field.path,

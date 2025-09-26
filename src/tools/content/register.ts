@@ -88,7 +88,7 @@ export function getContentTools(): Tool[] {
           },
           properties: {
             type: 'object',
-            description: 'Content properties (MainBody, Title, etc.)',
+            description: 'Content properties as key-value pairs. Use type-get-schema to discover required fields.',
             additionalProperties: true
           },
           language: {
