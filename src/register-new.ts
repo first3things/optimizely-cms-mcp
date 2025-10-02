@@ -6,11 +6,11 @@ import { ToolRegistry } from './tools/tool-registry.js';
 import { HealthCheckTool } from './tools/implementations/health-tool.js';
 import { DiscoverTool } from './tools/implementations/discover-tool.js';
 import { AnalyzeTool } from './tools/implementations/analyze-tool.js';
+import { SearchTool } from './tools/implementations/search-tool.js';
+import { LocateTool } from './tools/implementations/locate-tool.js';
+import { RetrieveTool } from './tools/implementations/retrieve-tool.js';
 
 // TODO: Import more tools as they're converted
-// import { SearchTool } from './tools/implementations/search-tool.js';
-// import { LocateTool } from './tools/implementations/locate-tool.js';
-// import { RetrieveTool } from './tools/implementations/retrieve-tool.js';
 // import { CreateTool } from './tools/implementations/create-tool.js';
 // import { UpdateTool } from './tools/implementations/update-tool.js';
 // import { ManageTool } from './tools/implementations/manage-tool.js';
@@ -25,7 +25,12 @@ export async function registerAllTools(server: Server, config: Config): Promise<
   registry.register(new DiscoverTool());
   registry.register(new AnalyzeTool());
   
-  // TODO: Register additional tools as they're implemented
+  // Register Phase 3 tools
+  registry.register(new SearchTool());
+  registry.register(new LocateTool());
+  registry.register(new RetrieveTool());
+  
+  // TODO: Register Phase 4 tools (create, update, manage)
   
   // TODO: During transition, also register legacy tools from existing register.ts
   // This allows gradual migration
