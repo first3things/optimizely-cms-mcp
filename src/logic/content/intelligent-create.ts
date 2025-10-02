@@ -472,7 +472,7 @@ export async function executeContentWizard(
                     properties: {}
                   }
                 },
-                contentTypes: ['StandardPage', 'ArticlePage', 'NewsItem', 'BlogPost'],
+                contentTypes: 'Use type-discover to see available types in your CMS',
                 tip: 'Use step="preview-content" to see available fields for the content type'
               }, null, 2)
             }]
@@ -601,7 +601,7 @@ export async function executeContentWizard(
                 },
                 message: `Creating content under "${stepParams.parentName}"`,
                 required: {
-                  contentType: 'Type of content (e.g., StandardPage, ArticlePage)',
+                  contentType: 'Type of content from your CMS',
                   name: 'Internal name for the content',
                   displayName: 'Display name (optional)',
                   properties: 'Content properties (optional)'
@@ -612,11 +612,11 @@ export async function executeContentWizard(
                     step: 'create-content',
                     parentGuid: stepParams.parentGuid,
                     parentName: stepParams.parentName,
-                    contentType: 'StandardPage',
+                    contentType: '[YourContentType]',
                     name: 'my-new-page',
                     displayName: 'My New Page',
                     properties: {
-                      MainBody: '<p>Page content here</p>',
+                      '[YourContentField]': '<p>Page content here</p>',
                       Title: 'Welcome to My Page'
                     }
                   }
@@ -655,7 +655,7 @@ export async function executeContentWizard(
                 wizard: 'content-creation',
                 currentStep: 'error',
                 error: `Content type '${stepParams.contentType}' not found`,
-                availableTypes: ['ArticlePage', 'StandardPage', 'BlogPost', 'NewsItem'],
+                availableTypes: 'Use type-discover to see available types in your CMS',
                 retry: {
                   tool: 'content-wizard',
                   params: {

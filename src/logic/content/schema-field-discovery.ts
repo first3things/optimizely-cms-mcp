@@ -182,22 +182,6 @@ export class SchemaFieldDiscovery {
     const userFieldLower = userField.toLowerCase();
     const userFieldWords = this.extractWords(userField);
     
-    // Check for special SEO field mappings first
-    const seoMapping = this.checkSeoFieldMapping(userField);
-    if (seoMapping) {
-      // For nested fields like SeoSettings.MetaTitle, check if the parent field exists
-      const parentField = seoMapping.suggestedField.split('.')[0];
-      if (fieldDetails[parentField]) {
-        return seoMapping;
-      }
-    }
-    
-    // Check for special ArticlePage mappings
-    const articleMapping = this.checkArticleFieldMapping(userField);
-    if (articleMapping && fieldDetails[articleMapping.suggestedField]) {
-      return articleMapping;
-    }
-    
     let bestMatch: FieldMappingSuggestion | null = null;
     let bestScore = 0;
     
@@ -294,89 +278,6 @@ export class SchemaFieldDiscovery {
   }
 
   /**
-   * Check for special SEO field mappings
-   */
-  private checkSeoFieldMapping(userField: string): FieldMappingSuggestion | null {
-    const userFieldLower = userField.toLowerCase();
-    
-    // Map common SEO field names to SeoSettings nested fields
-    const seoMappings: Record<string, string> = {
-      'metatitle': 'SeoSettings.MetaTitle',
-      'meta_title': 'SeoSettings.MetaTitle',
-      'seo_title': 'SeoSettings.MetaTitle',
-      'metadescription': 'SeoSettings.MetaDescription',
-      'meta_description': 'SeoSettings.MetaDescription',
-      'seo_description': 'SeoSettings.MetaDescription',
-      'metakeywords': 'SeoSettings.MetaKeywords',
-      'meta_keywords': 'SeoSettings.MetaKeywords',
-      'seo_keywords': 'SeoSettings.MetaKeywords',
-      'opengraphimage': 'SeoSettings.OpenGraphImage',
-      'og_image': 'SeoSettings.OpenGraphImage',
-      'graphtype': 'SeoSettings.GraphType',
-      'graph_type': 'SeoSettings.GraphType',
-      'opengraphtype': 'SeoSettings.GraphType',
-      'opengraph_type': 'SeoSettings.GraphType',
-      'og_type': 'SeoSettings.GraphType',
-      'ogtype': 'SeoSettings.GraphType',
-      'displayinmenu': 'SeoSettings.DisplayInMenu',
-      'display_in_menu': 'SeoSettings.DisplayInMenu',
-      'showinmenu': 'SeoSettings.DisplayInMenu',
-      'show_in_menu': 'SeoSettings.DisplayInMenu'
-    };
-    
-    if (seoMappings[userFieldLower]) {
-      return {
-        userField,
-        suggestedField: seoMappings[userFieldLower],
-        confidence: 'high',
-        reason: 'SEO field mapping to nested SeoSettings'
-      };
-    }
-    
-    return null;
-  }
-  
-  /**
-   * Check for special ArticlePage field mappings
-   */
-  private checkArticleFieldMapping(userField: string): FieldMappingSuggestion | null {
-    const userFieldLower = userField.toLowerCase();
-    
-    // Map common field names to actual ArticlePage schema fields
-    // User provides -> Maps to actual schema field
-    const articleMappings: Record<string, string> = {
-      'body': 'ArticleBody',  // User provides 'Body', map to 'ArticleBody'
-      'content': 'ArticleBody',
-      'mainbody': 'ArticleBody',
-      'main_body': 'ArticleBody',
-      'articlecontent': 'ArticleBody',
-      'publishdate': 'PublishDate',
-      'publish_date': 'PublishDate',
-      'published': 'PublishDate',
-      'publishedon': 'PublishDate',
-      'heading': 'Heading',  // Keep as-is if schema has 'Heading'
-      'title': 'Heading',
-      'headline': 'Heading',
-      'author': 'Author',  // Keep as-is if schema has 'Author'
-      'writtenby': 'Author',
-      'written_by': 'Author',
-      'authorname': 'Author',
-      'author_name': 'Author'
-    };
-    
-    if (articleMappings[userFieldLower]) {
-      return {
-        userField,
-        suggestedField: articleMappings[userFieldLower],
-        confidence: 'high',
-        reason: 'ArticlePage field mapping'
-      };
-    }
-    
-    return null;
-  }
-
-  /**
    * Get common field name patterns for matching
    */
   private getCommonFieldPatterns(): Record<string, string[]> {
@@ -444,7 +345,7 @@ export class SchemaFieldDiscovery {
         ? discovery.suggestions.find(s => s.userField === userField)
         : undefined;
       if (suggestion && suggestion.confidence !== 'low') {
-        // Handle nested field mappings (e.g., SeoSettings.MetaTitle)
+        // Handle nested field mappings (e.g., Settings.Title)
         if (suggestion.suggestedField.includes('.')) {
           this.setNestedField(mappedProperties, suggestion.suggestedField, value);
         } else {

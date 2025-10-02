@@ -25,16 +25,17 @@ export async function executeGetSiteInfo(
         contentCreation: {
           tool: "content-create",
           parameters: {
-            contentType: "StandardPage",
+            contentType: "[YourContentType]",
             name: "My New Page",
             displayName: "My New Page",
             container: "12345678-1234-1234-1234-123456789012",
             language: "en",
             properties: {
-              MainBody: "<p>Page content here</p>",
-              Title: "My Page Title"
+              "[YourContentField]": "<p>Page content here</p>",
+              "[YourTitleField]": "My Page Title"
             }
-          }
+          },
+          note: "Use type-discover to find available content types in your CMS"
         }
       },
       alternativeApproaches: [

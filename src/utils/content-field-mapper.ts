@@ -109,14 +109,13 @@ export class ContentFieldMapper {
     const fieldInfo = await this.getFieldsForContentType(typeName);
     if (!fieldInfo) return null;
 
-    // Priority order for main content fields
-    const priorities = [
-      'Content',      // Exact match first
-      'Body',         // Common alternative
-      'MainBody',     // Another common pattern
-      'Text',         // Simple text field
-      'ArticleBody',  // Article-specific
-      'Description'   // Fallback
+    // Generic patterns for discovering content fields dynamically
+    const patterns = [
+      'content',
+      'body',
+      'text',
+      'description',
+      'summary'
     ];
 
     // First, try exact matches

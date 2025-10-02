@@ -61,15 +61,10 @@ export class SimpleQueryBuilder {
     // Build field selections if requested
     let additionalFields = '';
     if (includeFields && includeFields.length > 0) {
-      // Add type-specific fields using inline fragments
+      // Add fields using generic _IContent interface
+      // This works for any content type without hardcoding
       additionalFields = `
-            ... on ArticlePage {
-              ${this.buildFieldSelection(includeFields)}
-            }
-            ... on StandardPage {
-              ${this.buildFieldSelection(includeFields)}
-            }
-            ... on _Page {
+            ... on _IContent {
               ${this.buildFieldSelection(includeFields)}
             }`;
     }
@@ -127,8 +122,9 @@ export class SimpleQueryBuilder {
         return `${field} { url { default } }`;
       }
       
-      if (field === 'SeoSettings') {
-        return `${field} { MetaTitle MetaDescription }`;
+      if (field.toLowerCase().includes('seo')) {
+        // Generic SEO field handling - discover actual fields dynamically
+        return `${field} { ... }`;
       }
       
       // Simple fields

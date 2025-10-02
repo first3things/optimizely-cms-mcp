@@ -92,42 +92,36 @@ export async function createLocalizedVersion(opts: {
   return r.json();
 }
 
-/** High-level: create an ArticlePage under a named parent (hardcoded en). */
-export async function createArticleUnder(
+/** High-level: create content under a named parent (dynamic type). */
+export async function createContentUnder(
   token: string,
   parentName: string,
-  article: {
+  content: {
     displayName: string;
+    contentType: string;
     properties: Record<string, any>;
   }
 ): Promise<{ containerKey: string; shell: any; version: any }> {
   // 1) resolve parent container key via GraphQL (_Content)
   const containerKey = await resolveParentKeyByName(token, parentName);
 
-  // 2) create shell
+  // 2) create shell with dynamic content type
   const shell = await createContentShell({
     token,
-    displayName: article.displayName,
-    contentType: "ArticlePage",
+    displayName: content.displayName,
+    contentType: content.contentType, // Dynamic, not hardcoded
     container: containerKey,
-    baseProps: {
-      SeoSettings: {
-        MetaTitle: article.displayName,
-        MetaDescription: "Auto-created via MCP assistant",
-        DisplayInMenu: true,
-        GraphType: "article",
-      },
-    },
+    baseProps: {}, // No hardcoded properties
   });
 
   // 3) create first version in en
   const version = await createLocalizedVersion({
     token,
     key: shell.key ?? shell?.metadata?.key ?? shell?._metadata?.key,
-    displayName: article.displayName,
+    displayName: content.displayName,
     locale: "en",
     status: "draft",
-    properties: article.properties,
+    properties: content.properties,
   });
 
   return { containerKey, shell, version };

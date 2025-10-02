@@ -6,16 +6,16 @@ import { getLogger } from '../../utils/logger.js';
 
 const logger = getLogger();
 
-// Common content type patterns
-const CONTENT_TYPE_PATTERNS = {
-  'article': ['Article', 'ArticlePage', 'BlogPost', 'BlogArticle', 'NewsArticle'],
-  'page': ['Page', 'StandardPage', 'ContentPage', 'BasicPage', 'LandingPage'],
-  'product': ['Product', 'ProductPage', 'ProductDetail', 'ProductListing'],
-  'blog': ['BlogPost', 'BlogPage', 'BlogArticle', 'BlogEntry'],
-  'news': ['NewsPage', 'NewsArticle', 'NewsItem', 'PressRelease'],
-  'standard': ['StandardPage', 'Page', 'BasicPage'],
-  'home': ['HomePage', 'StartPage', 'FrontPage'],
-  'landing': ['LandingPage', 'CampaignPage', 'MarketingPage']
+// Dynamic pattern matching - no hardcoded content types
+// These are generic patterns used for similarity scoring only
+const GENERIC_TYPE_PATTERNS = {
+  'article': ['article', 'post', 'news'],
+  'page': ['page', 'content'],
+  'product': ['product', 'item', 'catalog'],
+  'blog': ['blog', 'post', 'article'],
+  'news': ['news', 'press', 'announcement'],
+  'landing': ['landing', 'campaign', 'marketing'],
+  'home': ['home', 'start', 'front', 'index']
 };
 
 export async function executeContentTypeDiscovery(
@@ -27,38 +27,45 @@ export async function executeContentTypeDiscovery(
     
     logger.info('Discovering content types', { suggestedType: params.suggestedType });
     
-    // Get all content types - the preview3 API returns paginated results
+    // Get all content types - dynamically discover what's available
     const response = await client.get('/contentTypes');
     const contentTypes = response.items || [];
     
-    // If a suggested type is provided, try to find matches
+    // If a suggested type is provided, use pattern matching
     if (params.suggestedType) {
       const suggested = params.suggestedType.toLowerCase();
       const matches = [];
       
-      // Check patterns
-      for (const [key, patterns] of Object.entries(CONTENT_TYPE_PATTERNS)) {
-        if (suggested.includes(key)) {
-          for (const pattern of patterns) {
-            const found = contentTypes.find(ct => 
-              ct.key?.toLowerCase() === pattern.toLowerCase() ||
-              ct.displayName?.toLowerCase() === pattern.toLowerCase()
-            );
-            if (found) {
-              matches.push(found);
+      // Score content types based on similarity
+      for (const ct of contentTypes) {
+        let score = 0;
+        const ctKey = ct.key?.toLowerCase() || '';
+        const ctDisplay = ct.displayName?.toLowerCase() || '';
+        
+        // Direct matches
+        if (ctKey === suggested) score += 100;
+        if (ctDisplay === suggested) score += 90;
+        
+        // Contains matches
+        if (ctKey.includes(suggested)) score += 50;
+        if (ctDisplay.includes(suggested)) score += 40;
+        
+        // Pattern-based scoring (generic, not hardcoded types)
+        for (const [pattern, keywords] of Object.entries(GENERIC_TYPE_PATTERNS)) {
+          if (suggested.includes(pattern)) {
+            for (const keyword of keywords) {
+              if (ctKey.includes(keyword)) score += 20;
             }
           }
         }
+        
+        if (score > 0) {
+          matches.push({ contentType: ct, score });
+        }
       }
       
-      // Also check direct matches
-      const directMatch = contentTypes.find(ct => 
-        ct.key?.toLowerCase().includes(suggested) ||
-        ct.displayName?.toLowerCase().includes(suggested)
-      );
-      if (directMatch && !matches.includes(directMatch)) {
-        matches.push(directMatch);
-      }
+      // Sort by score
+      matches.sort((a, b) => b.score - a.score);
       
       if (matches.length > 0) {
         return {
@@ -67,31 +74,33 @@ export async function executeContentTypeDiscovery(
             text: JSON.stringify({
               success: true,
               suggestedType: params.suggestedType,
-              matches: matches.map(ct => ({
-                name: ct.key,
-                displayName: ct.displayName,
-                description: ct.description,
-                baseType: ct.baseType
+              matches: matches.slice(0, 5).map(m => ({
+                name: m.contentType.key,
+                displayName: m.contentType.displayName,
+                description: m.contentType.description,
+                baseType: m.contentType.baseType,
+                confidence: Math.min(m.score, 100) + '%'
               })),
-              recommendation: matches[0].key,
-              message: `Found ${matches.length} content type(s) matching "${params.suggestedType}". Recommended: ${matches[0].key}`
+              recommendation: matches[0].contentType.key,
+              message: `Found ${matches.length} content type(s) matching "${params.suggestedType}". Recommended: ${matches[0].contentType.key}`
             }, null, 2)
           }]
         };
       }
     }
     
-    // Return all content types
+    // Categorize dynamically based on baseType and naming patterns
     const pageTypes = contentTypes.filter(ct => 
       ct.baseType === '_page' || 
-      ct.key?.includes('Page') ||
-      ct.displayName?.includes('Page')
+      ct.key?.toLowerCase().includes('page') ||
+      ct.displayName?.toLowerCase().includes('page')
     );
     
     const blockTypes = contentTypes.filter(ct => 
       ct.baseType === '_component' || 
-      ct.key?.includes('Block') ||
-      ct.displayName?.includes('Block')
+      ct.key?.toLowerCase().includes('block') ||
+      ct.key?.toLowerCase().includes('component') ||
+      ct.displayName?.toLowerCase().includes('block')
     );
     
     const otherTypes = contentTypes.filter(ct => 
@@ -119,10 +128,14 @@ export async function executeContentTypeDiscovery(
             displayName: ct.displayName,
             description: params.includeDescriptions ? ct.description : undefined
           })),
-          commonSuggestions: Object.keys(CONTENT_TYPE_PATTERNS),
+          otherTypes: otherTypes.map(ct => ({
+            name: ct.key,
+            displayName: ct.displayName,
+            description: params.includeDescriptions ? ct.description : undefined
+          })),
           message: params.suggestedType 
             ? `No exact match found for "${params.suggestedType}". Showing all available types.`
-            : 'Available content types listed by category.'
+            : 'Discovered content types in your CMS, categorized by type.'
         }, null, 2)
       }]
     };
@@ -149,7 +162,7 @@ export async function executeSmartContentTypeMatch(
       .replace(/\s+/g, '')
       .replace(/[^a-z]/g, '');
     
-    // Get all content types - the preview3 API returns paginated results
+    // Get all content types - dynamically discover
     const response = await client.get('/contentTypes');
     const contentTypes = response.items || [];
     
@@ -167,20 +180,27 @@ export async function executeSmartContentTypeMatch(
       if (ctName.includes(normalized)) score += 50;
       if (ctDisplay.includes(normalized)) score += 40;
       
-      // Pattern match
-      for (const [key, patterns] of Object.entries(CONTENT_TYPE_PATTERNS)) {
-        if (normalized.includes(key) && patterns.includes(ct.key)) {
-          score += 30;
+      // Reverse contains (requested type contains content type)
+      if (normalized.includes(ctName)) score += 30;
+      
+      // Generic pattern matching (not hardcoded types)
+      for (const [pattern, keywords] of Object.entries(GENERIC_TYPE_PATTERNS)) {
+        if (normalized.includes(pattern)) {
+          for (const keyword of keywords) {
+            if (ctName.includes(keyword)) score += 20;
+          }
         }
       }
       
       // Context matching
       if (params.context) {
         const ctx = params.context.toLowerCase();
-        if (ctx.includes('blog') && ctName.includes('blog')) score += 20;
-        if (ctx.includes('news') && ctName.includes('news')) score += 20;
-        if (ctx.includes('product') && ctName.includes('product')) score += 20;
-        if (ctx.includes('article') && (ctName.includes('article') || ctName.includes('blog'))) score += 20;
+        const words = ctx.split(/\s+/);
+        for (const word of words) {
+          if (ctName.includes(word) || ctDisplay.includes(word)) {
+            score += 10;
+          }
+        }
       }
       
       return { contentType: ct, score };
@@ -193,11 +213,7 @@ export async function executeSmartContentTypeMatch(
       .slice(0, 5);
     
     if (topMatches.length === 0) {
-      // No matches found, suggest common types
-      const commonTypes = contentTypes.filter(ct => 
-        ['StandardPage', 'ArticlePage', 'Page', 'BlogPost'].includes(ct.key)
-      );
-      
+      // No matches found, show available types
       return {
         content: [{
           type: 'text',
@@ -205,12 +221,13 @@ export async function executeSmartContentTypeMatch(
             success: false,
             requestedType: params.requestedType,
             message: `No content types found matching "${params.requestedType}"`,
-            suggestions: commonTypes.map(ct => ({
+            availableTypes: contentTypes.slice(0, 10).map(ct => ({
               name: ct.key,
               displayName: ct.displayName,
-              reason: 'Common content type'
+              baseType: ct.baseType
             })),
-            hint: 'Try using common terms like: page, article, blog, product, news'
+            totalAvailable: contentTypes.length,
+            hint: 'Use type-discover to see all available content types in your CMS'
           }, null, 2)
         }]
       };
