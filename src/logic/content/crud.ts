@@ -168,7 +168,7 @@ export async function executeContentCreate(
         'Content creation requires a parent container GUID. You have several options:\n\n' +
         '1. USE THE INTELLIGENT TOOL (Recommended):\n' +
         '   Tool: content_create_under\n' +
-        '   Example: { "parentName": "Home", "contentType": "ArticlePage", "name": "my-article" }\n\n' +
+        '   Example: { "parentName": "Home", "contentType": "YourContentType", "name": "my-content" }\n\n' +
         '2. FIND THE PARENT FIRST:\n' +
         '   Step 1: Use content_find_by_name with { "name": "Home" }\n' +
         '   Step 2: Use the returned key as container\n\n' +

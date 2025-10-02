@@ -338,22 +338,26 @@ export class IntelligentFieldPopulator {
     context: PopulationContext,
     suggestions: PopulationResult['suggestions']
   ): Promise<void> {
-    // Check SEO fields
-    const seoFields = [
-      { path: 'SeoSettings.MetaTitle', recommendation: 'Add a meta title for better SEO' },
-      { path: 'SeoSettings.MetaDescription', recommendation: 'Add a meta description for search results' },
-      { path: 'SeoSettings.MetaKeywords', recommendation: 'Consider adding relevant keywords' }
+    // Check for SEO-related fields dynamically
+    const seoPatterns = [
+      { pattern: /metatitle|seotitle/i, recommendation: 'Add a meta title for better SEO' },
+      { pattern: /metadescription|seodescription/i, recommendation: 'Add a meta description for search results' },
+      { pattern: /metakeywords|seokeywords/i, recommendation: 'Consider adding relevant keywords' }
     ];
     
-    for (const field of seoFields) {
-      const property = Array.isArray(schema.properties) 
-        ? schema.properties.find(p => p.path === field.path)
-        : undefined;
-      if (property && !this.getFieldValue(properties, field.path)) {
-        suggestions.push({
-          field: field.path,
-          message: field.recommendation
-        });
+    // Find SEO fields dynamically based on patterns
+    if (Array.isArray(schema.properties)) {
+      for (const property of schema.properties) {
+        const lowerPath = property.path.toLowerCase();
+        for (const seoField of seoPatterns) {
+          if (seoField.pattern.test(lowerPath) && !this.getFieldValue(properties, property.path)) {
+            suggestions.push({
+              field: property.path,
+              message: seoField.recommendation
+            });
+            break; // Only add one suggestion per field
+          }
+        }
       }
     }
   }

@@ -291,12 +291,12 @@ export class OptimizelyAdapter extends BaseCMSAdapter {
     const lowerName = name.toLowerCase();
     const lowerPath = path.toLowerCase();
 
-    // Special handling for Optimizely-specific fields
-    if (lowerPath === 'seosettings.graphtype') {
+    // Handle SEO and graph type fields dynamically
+    if (lowerPath.includes('graphtype') || lowerPath.includes('ogtype')) {
       return this.getSmartGraphType(contentType);
     }
 
-    if (lowerPath === 'seosettings.displayinmenu') {
+    if (lowerPath.includes('displayinmenu') || lowerPath.includes('showinmenu')) {
       return true; // Most pages should be in menu by default
     }
 
@@ -453,15 +453,7 @@ export class OptimizelyAdapter extends BaseCMSAdapter {
   async getFieldDefaults(typeName: string): Promise<FieldDefault[]> {
     const defaults = await super.getFieldDefaults(typeName);
     
-    // Add Optimizely-specific conditional defaults
-    defaults.push({
-      field: 'SeoSettings.DisplayInMenu',
-      value: true,
-      condition: (contentType) => {
-        // Hide from menu for certain types
-        return !contentType.toLowerCase().includes('system');
-      }
-    });
+    // No hardcoded field defaults - let discovery handle this
 
     return defaults;
   }
@@ -478,26 +470,44 @@ export class OptimizelyAdapter extends BaseCMSAdapter {
     // Additional Optimizely-specific validation
     const warnings = result.warnings || [];
 
-    // Warn if SEO fields are empty
-    if (!content.properties?.SeoSettings?.MetaTitle && content.properties?.Title) {
-      warnings.push({
-        field: 'properties.SeoSettings.MetaTitle',
-        message: 'MetaTitle is empty. Consider setting it for better SEO.',
-        suggestion: content.properties.Title
-      });
-    }
-
-    if (!content.properties?.SeoSettings?.MetaDescription) {
-      warnings.push({
-        field: 'properties.SeoSettings.MetaDescription',
-        message: 'MetaDescription is empty. This is important for SEO.',
-        suggestion: 'Add a 150-160 character description'
-      });
+    // Dynamically check for SEO-related fields
+    if (schema.properties && Array.isArray(schema.properties)) {
+      for (const property of schema.properties) {
+        const lowerPath = property.path.toLowerCase();
+        
+        // Check for meta title fields
+        if ((lowerPath.includes('metatitle') || lowerPath.includes('seotitle')) && 
+            !this.getFieldValue(content.properties, property.path) && 
+            content.properties?.Title) {
+          warnings.push({
+            field: `properties.${property.path}`,
+            message: 'Meta title is empty. Consider setting it for better SEO.',
+            suggestion: content.properties.Title
+          });
+        }
+        
+        // Check for meta description fields
+        if ((lowerPath.includes('metadescription') || lowerPath.includes('seodescription')) && 
+            !this.getFieldValue(content.properties, property.path)) {
+          warnings.push({
+            field: `properties.${property.path}`,
+            message: 'Meta description is empty. This is important for SEO.',
+            suggestion: 'Add a 150-160 character description'
+          });
+        }
+      }
     }
 
     return {
       ...result,
       warnings
     };
+  }
+
+  /**
+   * Get field value from nested object using dot notation
+   */
+  private getFieldValue(obj: any, path: string): any {
+    return path.split('.').reduce((current, part) => current?.[part], obj);
   }
 }

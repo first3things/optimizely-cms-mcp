@@ -105,7 +105,7 @@ export class SimpleQueryBuilder {
    */
   private buildFieldSelection(fields: string[]): string {
     return fields.map(field => {
-      // Handle nested fields like SeoSettings.MetaTitle
+      // Handle nested fields like ParentObject.ChildField
       if (field.includes('.')) {
         const parts = field.split('.');
         const parent = parts[0];
@@ -113,17 +113,21 @@ export class SimpleQueryBuilder {
         return `${parent} { ${children} }`;
       }
       
-      // Handle known complex fields that need subfields
-      if (field === 'Body' || field.toLowerCase().includes('richtext')) {
+      // Handle complex fields based on patterns, not hardcoded names
+      const lowerField = field.toLowerCase();
+      
+      // Rich text fields - let GraphQL handle the structure
+      if (lowerField.includes('richtext') || lowerField.includes('body') || lowerField.includes('content')) {
         return `${field}`;  // Just the field name, let GraphQL handle the error
       }
       
-      if (field === 'PromoImage' || field.toLowerCase().includes('image')) {
+      // Image/media fields - common pattern is to have URL structure
+      if (lowerField.includes('image') || lowerField.includes('media') || lowerField.includes('photo')) {
         return `${field} { url { default } }`;
       }
       
-      if (field.toLowerCase().includes('seo')) {
-        // Generic SEO field handling - discover actual fields dynamically
+      // SEO-related fields - use ellipsis to discover structure
+      if (lowerField.includes('seo') || lowerField.includes('meta')) {
         return `${field} { ... }`;
       }
       

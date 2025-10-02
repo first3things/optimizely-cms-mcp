@@ -51,7 +51,7 @@ export async function registerAllTools(server: Server, config: Config): Promise<
         properties: {
           category: {
             type: 'string',
-            enum: ['graph', 'content', 'assets', 'types', 'workflow', 'composite', 'utility', 'intelligent'],
+            enum: ['graph', 'content', 'assets', 'types', 'workflow', 'composite', 'utility', 'intelligent', 'helper'],
             description: 'Tool category to filter documentation'
           }
         },
@@ -223,7 +223,8 @@ async function handleGetDocumentation(params: { category?: string }, context: To
       workflow: 'Workflow management',
       composite: 'Complex multi-step operations',
       utility: 'Helper and utility tools',
-      intelligent: 'Smart content creation with parent discovery'
+      intelligent: 'Smart content creation with parent discovery',
+      helper: 'Helper tools for content operations'
     }
   };
 
@@ -232,46 +233,25 @@ async function handleGetDocumentation(params: { category?: string }, context: To
     utility: ['health-check', 'get-config', 'get-documentation'],
     graph: [
       'graph-query',
-      'graph-introspection',
-      'graph-search',
-      'graph-autocomplete',
-      'graph-faceted-search',
-      'graph-get-content',
-      'graph-get-content-by-path',
-      'graph-get-children',
-      'graph-get-ancestors',
-      'graph-get-related'
+      'graph-introspection'
     ],
     content: [
-      'content-create',
-      'content-get',
-      'content-update',
-      'content-patch',
-      'content-delete',
-      'content-move',
-      'content-copy',
-      'content-list-versions',
-      'content-create-version',
-      'content-promote-version',
-      'content-list-languages',
-      'content-create-language-branch'
+      'content-test-api',
+      'type-discover',
+      'type-match',
+      'content_type_analyzer'
     ],
-    assets: [],  // Will be added in Phase 4
-    types: [
-      'type-list',
-      'type-get',
-      'type-get-schema'
-    ],
-    workflow: [
-      'workflow-get-status',
-      'workflow-transition'
-    ],
-    composite: [], // Will be added in Phase 5
+    assets: [],  // Empty - no asset tools implemented
+    types: [],   // Empty - type tools merged into content category
+    workflow: [], // Empty - no workflow tools implemented
+    composite: [], // Empty - no composite tools implemented
     intelligent: [
-      'content_find_by_name',
-      'content_get_details', 
-      'content_create_under',
-      'content_creation_wizard'
+      'content_creation_wizard',
+      'graph_discover_types',
+      'graph_discover_fields'
+    ],
+    helper: [
+      'get-full-content-by-path'
     ]
   };
 

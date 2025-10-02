@@ -43,14 +43,14 @@ export async function resolveParentKeyByName(token: string, name: string): Promi
 export async function createContentShell(opts: {
   token: string;
   displayName: string;
-  contentType: string;     // e.g., "ArticlePage"
+  contentType: string;     // e.g., your CMS content type name
   container?: string;      // parent key (GUID) if creating under a container
   baseProps?: Record<string, any>;
 }): Promise<any> {
   const { token, displayName, contentType, container, baseProps = {} } = opts;
   const body: any = {
     displayName,
-    contentType,           // must be string like "ArticlePage"
+    contentType,           // must be string matching your CMS content types
   };
   
   // Only add container if provided
