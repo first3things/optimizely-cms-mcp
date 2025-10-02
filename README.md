@@ -4,15 +4,24 @@ A Model Context Protocol (MCP) server for Optimizely CMS, providing AI assistant
 
 ## Features
 
-- **GraphQL Integration**: Query content using Optimizely Graph API with multiple authentication methods
-- **Content Management**: Full CRUD operations via Content Management API (Preview3/Experimental)
-- **Intelligent Content Creation**: Automatically handles null values and finds parent pages by name
+### Current (Phase 1)
+- **Discovery-First Architecture**: Zero hardcoded assumptions about content types or fields
+- **Dynamic Schema Introspection**: Discovers available content types and fields at runtime
+- **Intelligent Field Mapping**: Pattern-based field matching with confidence scoring
+- **Content Type Analysis**: Deep analysis of content requirements and constraints
+- **GraphQL Integration**: Direct GraphQL queries with schema introspection
+- **API Health Monitoring**: Test connectivity to both Graph and Content APIs
+- **Smart Type Matching**: Fuzzy matching of requested types to available types
+- **Caching**: Built-in caching for improved discovery performance
+- **Type Safety**: Full TypeScript support with runtime validation
+
+### Planned (Future Phases)
+- **Full CRUD Operations**: Complete content lifecycle management
 - **Version Management**: Create, publish, and manage content versions
-- **Content Types**: Explore and understand content type schemas
 - **Workflow Support**: Manage content approval workflows
 - **Multi-language Support**: Handle content in multiple languages
-- **Caching**: Built-in caching for improved performance
-- **Type Safety**: Full TypeScript support with runtime validation
+- **Batch Operations**: Bulk content management capabilities
+- **Advanced Search**: Natural language content queries
 
 ## Installation
 
@@ -193,73 +202,79 @@ For other MCP-compatible clients, use the stdio transport configuration:
 }
 ```
 
-## Available Tools (38 Total)
+## Available Tools (13 Total - Phase 1)
+
+> **Note**: This is Phase 1 of a major restructuring project. The full vision includes ~40 tools, but we're currently operating with a focused set of 13 essential tools while migrating to a discovery-first architecture.
 
 ### Utility Tools (3)
-- `test_connection` - Test connectivity to Optimizely APIs
-- `health_check` - Check server health status
-- `get_config` - Get current configuration (sanitized)
+- `health-check` - Check API connectivity and server health
+- `get-config` - Get current server configuration (sanitized)
+- `get-documentation` - Get documentation for available tools
 
-### GraphQL Query Tools (10)
-- `graph_search` - Full-text content search
-- `graph_autocomplete` - Get autocomplete suggestions
-- `graph_facet_search` - Search with faceted filtering
-- `graph_get_by_id` - Get content by numeric ID
-- `graph_get_by_guid` - Get content by GUID
-- `graph_get_children` - Get child content items
-- `graph_get_ancestors` - Get ancestor hierarchy
-- `graph_get_descendants` - Get all descendants
-- `graph_get_by_route` - Get content by route segment
-- `graph_get_by_url` - Get content by full URL
+### Graph Tools (2)
+- `graph-query` - Execute custom GraphQL queries (for complex queries during migration)
+- `graph-introspection` - Get the GraphQL schema for discovery and validation
 
-### Content Management Tools (17)
+### Content Tools (4)
+- `content-test-api` - Test Content Management API connectivity and available endpoints
+- `type-discover` - Discover content types with smart matching
+- `type-match` - Smart match a requested content type to available types
+- `content_type_analyzer` - Analyze content type requirements, fields, and generate examples
 
-#### Content CRUD (7)
-- `content_create` - Create new content
-- `content_get` - Get content by ID
-- `content_update` - Update existing content
-- `content_patch` - Apply JSON Patch operations
-- `content_delete` - Delete content
-- `content_move` - Move content to new location
-- `content_copy` - Copy content
+### Intelligent Tools (3)
+- `content_creation_wizard` - Interactive wizard for content creation with discovery
+- `graph_discover_types` - Discover all available content types dynamically from GraphQL schema
+- `graph_discover_fields` - Discover all available fields for a specific content type
 
-#### Version Management (5)
-- `version_list` - List all content versions
-- `version_get` - Get specific version
-- `version_create` - Create new version
-- `version_publish` - Publish a version
-- `version_set_common_draft` - Set as common draft
+### Helper Tools (1)
+- `get-full-content-by-path` - Retrieve complete content data by URL path
 
-#### Content Types (3)
-- `type_list` - List available content types
-- `type_get` - Get content type details
-- `type_get_schema` - Get JSON schema for type
+## Key Architecture Principles (New in Phase 1)
 
-#### Workflows (2)
-- `workflow_get` - Get workflow status
-- `workflow_transition` - Change workflow state
+### Discovery-First Design
+Unlike traditional integrations that hardcode content types and field names, this MCP server:
+- **Never hardcodes content types** - No assumptions about "ArticlePage", "StandardPage", etc.
+- **Never hardcodes field mappings** - No predefined paths like "SeoSettings.MetaTitle"
+- **Discovers everything dynamically** - Uses introspection to understand your CMS
+- **Adapts to any CMS configuration** - Works with custom content types and fields
 
-### Intelligent Content Tools (4)
-These tools combine GraphQL and CMA to provide smart content creation:
+### Intelligent Field Mapping
+The server uses pattern matching and similarity scoring to:
+- Map user-friendly field names to actual CMS fields
+- Handle nested properties automatically
+- Generate appropriate default values based on field types
+- Provide confidence scores for mappings
 
-- `content_find_by_name` - Find content by name (e.g., "Home", "News") to get IDs and GUIDs
-- `content_get_details` - Get full details including GUID for a specific content
-- `content_create_under` - Create content under a parent by name (e.g., "create under Home")
-- `content_creation_wizard` - Interactive wizard for guided content creation
+### Smart Content Creation Workflow
+1. **Discover** available content types using `type-discover` or `graph_discover_types`
+2. **Analyze** requirements with `content_type_analyzer` to understand fields
+3. **Create** content using `content_creation_wizard` with intelligent field mapping
+4. **Validate** against discovered schema constraints
 
-#### Smart Content Creation
-The MCP server now intelligently handles content creation when Claude sends null values:
+## Migration Roadmap
 
-1. **Automatic Parent Finding**: If no parent container is provided, it searches for common parent pages (Home, Start, Root)
-2. **Content Type Mapping**: Maps human-readable types like "article page" to actual types like "ArticlePage"
-3. **Graceful Fallbacks**: Falls back to "StandardPage" if the requested content type doesn't exist
+This server is undergoing a major architectural transformation from 39 specialized tools to 10 powerful, discovery-first tools:
 
-#### Example: Creating content under "Home"
-Instead of needing to know the Home page's GUID, you can now:
-1. Use `content_find_by_name` with "Home" to find the page
-2. Use `content_create_under` to create content directly under it
-3. Or use `content_creation_wizard` for a step-by-step process
-4. Even `content-create` now automatically handles null values intelligently!
+### Phase 1 (Current) - Foundation
+- ✅ Removed all hardcoded content types and field names
+- ✅ Implemented discovery tools for types and schemas
+- ✅ Built intelligent field mapping engine
+- 🔄 Operating with 13 essential tools during transition
+
+### Phase 2 - Search & Retrieval
+- 🔲 Implement unified `search` tool replacing multiple graph tools
+- 🔲 Add `locate` tool for finding content by ID/path
+- 🔲 Build `retrieve` tool for full content data
+
+### Phase 3 - Content Management
+- 🔲 Implement `create` tool with full field mapping
+- 🔲 Add `update` tool with intelligent patching
+- 🔲 Build `manage` tool for lifecycle operations
+
+### Phase 4 - Help & Polish
+- 🔲 Add context-aware `help` tool
+- 🔲 Remove compatibility layers
+- 🔲 Achieve target of 10 core tools
 
 ## Development
 
