@@ -21,7 +21,17 @@ import { DiscoveryCache } from '../../services/discovery-cache.js';
  */
 export class RetrieveTool extends BaseTool<RetrieveInput, RetrieveOutput> {
   protected readonly name = 'retrieve';
-  protected readonly description = 'Retrieve full content details from Content Management API';
+  protected readonly description = `Get complete content data from Content Management API.
+
+Use this when you need full content details for editing or detailed analysis.
+
+Workflow:
+1. Use 'search' or 'locate' to find content
+2. Use 'retrieve' with the content ID/key to get full details
+
+Example: retrieve({"identifier": "12345", "includeSchema": true})
+
+This tool provides complete property values, block data, and version info.`;
   
   protected readonly inputSchema = z.object({
     identifier: z.string().describe('Content ID, key, or path'),

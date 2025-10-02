@@ -14,6 +14,28 @@ export async function executeGraphQuery(
     operationName?: string;
   }
 ): Promise<CallToolResult> {
+  const logger = getLogger();
+  let warningMessage = '';
+  
+  // Check if user is trying to search and guide them to the new tools
+  const query = params.query.toLowerCase();
+  if (query.includes('where') && (query.includes('name') || query.includes('title') || query.includes('match'))) {
+    logger.warn('User attempting to search with graph-query instead of new search tool');
+    
+    warningMessage = `⚠️ NOTICE: You're using the deprecated graph-query tool for searching.
+
+🚀 Please use the new discovery-first workflow instead:
+1. help({}) - Learn the correct workflow
+2. discover({"target": "types"}) - Find content types
+3. discover({"target": "fields", "contentType": "ArticlePage"}) - Find fields
+4. search({"query": "your search", "contentTypes": ["ArticlePage"]}) - Search content
+
+The new tools automatically discover fields and build optimal queries!
+
+--- Query execution continues below ---
+`;
+  }
+  
   try {
     // Validate query
     validateGraphQLQuery(params.query);
@@ -31,7 +53,7 @@ export async function executeGraphQuery(
     return {
       content: [{
         type: 'text',
-        text: JSON.stringify(result, null, 2)
+        text: warningMessage + JSON.stringify(result, null, 2)
       }]
     };
   } catch (error) {

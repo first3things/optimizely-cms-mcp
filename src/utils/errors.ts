@@ -264,12 +264,44 @@ function getFieldSuggestions(message: string): string[] {
   
   if (fieldMatch) {
     const fieldName = fieldMatch[1];
-    suggestions.push(`Run graph-introspection to discover available fields`);
-    suggestions.push(`Check if '${fieldName}' exists in the schema`);
     
-    if (fieldName === 'id') suggestions.push(`Try using '_metadata.key' instead of 'id'`);
-    if (fieldName === 'title') suggestions.push(`Try using '_metadata.displayName' instead of 'title'`);
+    // Primary suggestion - use discover tool
+    suggestions.push(`🚀 Use the 'discover' tool to find available fields:`);
+    suggestions.push(`   discover({"target": "fields", "contentType": "YourContentType"})`);
+    
+    // Common field mapping suggestions
+    const commonMappings: Record<string, string> = {
+      'id': '_metadata.key',
+      'Id': '_metadata.key',
+      'ID': '_metadata.key',
+      'title': '_metadata.displayName or Heading',
+      'Title': '_metadata.displayName or Heading',
+      'name': '_metadata.displayName',
+      'Name': '_metadata.displayName',
+      'description': 'SubHeading or Description (use discover to check)',
+      'Description': 'SubHeading or Description (use discover to check)',
+      'author': 'Author or AuthorEmail (use discover to check)',
+      'Author': 'Author or AuthorEmail (use discover to check)',
+      'content': 'Body or MainContent (use discover to check)',
+      'Content': '_Content (for queries) or Body field'
+    };
+    
+    if (commonMappings[fieldName]) {
+      suggestions.push(`💡 Common mapping: '${fieldName}' → ${commonMappings[fieldName]}`);
+    }
+    
+    // Type-specific suggestions
+    if (message.includes('_ContentWhereInput')) {
+      suggestions.push(`📝 For search filters, use _metadata fields or discovered field names`);
+    }
+    
+    if (message.includes('IContent')) {
+      suggestions.push(`📝 Use '_IContent' (with underscore) instead of 'IContent'`);
+    }
   }
+  
+  // Add workflow suggestion
+  suggestions.push(`\n✅ Correct workflow: discover → search → retrieve`);
   
   return suggestions;
 }
@@ -279,14 +311,28 @@ function formatGraphQLError(error: GraphQLError): string {
   
   lines.push(`GraphQL Error: ${error.message}`);
   
+  // Add discovery-first reminder for field errors
+  if (error.message.includes('Cannot query field') || error.message.includes('Field') || error.message.includes('not defined')) {
+    lines.push('\n⚠️  Field not found! This usually means you need to discover the correct field names.');
+    lines.push('\n🔍 Quick fix:');
+    lines.push('1. Run: help({"topic": "workflow"}) for guidance');
+    lines.push('2. Run: discover({"target": "types"}) to list content types');
+    lines.push('3. Run: discover({"target": "fields", "contentType": "YourType"}) to see actual fields');
+  }
+  
   if (error.syntaxError) {
     lines.push(`\nSyntax Error at line ${error.syntaxError.line}, column ${error.syntaxError.column}:`);
     lines.push(error.syntaxError.snippet);
   }
   
   if (error.suggestions && error.suggestions.length > 0) {
-    lines.push('\nSuggestions:');
-    error.suggestions.forEach(suggestion => lines.push(`- ${suggestion}`));
+    lines.push('\n💡 Suggestions:');
+    error.suggestions.forEach(suggestion => lines.push(suggestion.startsWith('  ') ? suggestion : `  ${suggestion}`));
+  }
+  
+  // Add general help reminder
+  if (!error.suggestions || error.suggestions.length === 0) {
+    lines.push('\n💡 Need help? Try: help({}) or help({"topic": "errors"})');
   }
   
   return lines.join('\n');

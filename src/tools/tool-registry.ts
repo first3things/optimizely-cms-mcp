@@ -44,6 +44,24 @@ export class ToolRegistry {
   }
   
   /**
+   * Check if a handler exists for a tool
+   */
+  hasHandler(name: string): boolean {
+    return this.tools.has(name);
+  }
+  
+  /**
+   * Handle a tool call (alias for execute)
+   */
+  async handleToolCall(name: string, args: any, context?: ToolContext): Promise<CallToolResult> {
+    // Update context if provided
+    if (context) {
+      this.context = context;
+    }
+    return this.execute(name, args);
+  }
+  
+  /**
    * Execute a tool by name
    */
   async execute(name: string, args: any): Promise<CallToolResult> {

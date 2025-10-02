@@ -3,8 +3,7 @@ import { BaseTool, ToolContext } from '../base-tool.js';
 import { getCMAConfig } from '../../config.js';
 import { AdapterRegistry } from '../../adapters/registry.js';
 import { SchemaFieldDiscovery } from '../../logic/content/schema-field-discovery.js';
-import { IntelligentContentPopulator } from '../../logic/content/intelligent-populator.js';
-import { ContentTypeSchema, PropertyInfo } from '../../types/content.js';
+import type { ContentTypeSchema, PropertyDefinition as PropertyInfo } from '../../adapters/base.js';
 import { ValidationError } from '../../utils/errors.js';
 
 // Input schema for the analyze tool

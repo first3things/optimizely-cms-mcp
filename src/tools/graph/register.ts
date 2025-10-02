@@ -16,7 +16,7 @@ export function getGraphTools(): Tool[] {
   return [
     {
       name: 'graph-query',
-      description: 'Execute custom GraphQL queries. Reserved for complex queries during migration.',
+      description: '⚠️ DEPRECATED - Use the "search" tool instead! Run help({}) to learn the correct workflow. Only use this for complex queries that cannot be handled by the new tools.',
       inputSchema: {
         type: 'object',
         properties: {

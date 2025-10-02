@@ -12,6 +12,15 @@ import { getIntelligentTools, registerIntelligentHandlers } from './tools/intell
 import { getHelperTools } from './tools/helper/register.js';
 import { executeGetFullContentByPath } from './tools/helper/get-full-content.js';
 
+// Import new tools
+import { ToolRegistry } from './tools/tool-registry.js';
+import { HelpTool } from './tools/implementations/help-tool.js';
+import { DiscoverTool } from './tools/implementations/discover-tool.js';
+import { AnalyzeTool } from './tools/implementations/analyze-tool.js';
+import { SearchTool } from './tools/implementations/search-tool.js';
+import { LocateTool } from './tools/implementations/locate-tool.js';
+import { RetrieveTool } from './tools/implementations/retrieve-tool.js';
+
 export async function registerAllTools(server: Server, config: Config): Promise<void> {
   const logger = getLogger();
   const cache = getCacheManager();
@@ -60,8 +69,23 @@ export async function registerAllTools(server: Server, config: Config): Promise<
     }
   ];
 
-  // Combine all tools
+  // Register new tools using ToolRegistry
+  const toolRegistry = new ToolRegistry(config);
+  
+  // Register new tools FIRST (they should be preferred)
+  toolRegistry.register(new HelpTool());
+  toolRegistry.register(new DiscoverTool());
+  toolRegistry.register(new AnalyzeTool());
+  toolRegistry.register(new SearchTool());
+  toolRegistry.register(new LocateTool());
+  toolRegistry.register(new RetrieveTool());
+  
+  // Get new tool definitions
+  const newTools = toolRegistry.getTools();
+  
+  // Combine all tools - new tools first!
   const tools: Tool[] = [
+    ...newTools,  // New tools at the beginning
     ...utilityTools,
     ...getGraphTools(),
     ...getContentTools(),
@@ -119,7 +143,12 @@ export async function registerAllTools(server: Server, config: Config): Promise<
     logger.debug(`Tool ${name} called`, { args });
 
     try {
-      // Check if we have a handler for this tool
+      // Check new tools first (they use the ToolRegistry)
+      if (toolRegistry.hasHandler(name)) {
+        return await toolRegistry.handleToolCall(name, args || {}, context);
+      }
+      
+      // Check if we have a handler for legacy tools
       const handler = handlers.get(name);
       if (handler) {
         return await handler(args || {}, context);
@@ -230,16 +259,26 @@ async function handleGetDocumentation(params: { category?: string }, context: To
 
   // Get all available tools grouped by category
   const toolsByCategory: Record<string, string[]> = {
+    // NEW TOOLS (Recommended - use these first!)
+    'discovery-first': [
+      'help',      // 🚀 START HERE - Learn the discovery-first workflow
+      'discover',  // Find content types and fields dynamically
+      'analyze',   // Deep analysis of content types
+      'search',    // Intelligent content search
+      'locate',    // Find content by ID/path
+      'retrieve'   // Get full content details
+    ],
     utility: ['health-check', 'get-config', 'get-documentation'],
+    // LEGACY TOOLS (Being phased out - use new tools above)
     graph: [
-      'graph-query',
-      'graph-introspection'
+      'graph-query',         // ⚠️ Use 'search' instead
+      'graph-introspection'  // ⚠️ Use 'discover' instead
     ],
     content: [
       'content-test-api',
-      'type-discover',
-      'type-match',
-      'content_type_analyzer'
+      'type-discover',       // ⚠️ Use 'discover' instead
+      'type-match',          // ⚠️ Use 'discover' instead
+      'content_type_analyzer' // ⚠️ Use 'analyze' instead
     ],
     assets: [],  // Empty - no asset tools implemented
     types: [],   // Empty - type tools merged into content category
@@ -247,11 +286,11 @@ async function handleGetDocumentation(params: { category?: string }, context: To
     composite: [], // Empty - no composite tools implemented
     intelligent: [
       'content_creation_wizard',
-      'graph_discover_types',
-      'graph_discover_fields'
+      'graph_discover_types',  // ⚠️ Use 'discover' instead
+      'graph_discover_fields'  // ⚠️ Use 'discover' instead
     ],
     helper: [
-      'get-full-content-by-path'
+      'get-full-content-by-path' // ⚠️ Use 'search' + 'retrieve' instead
     ]
   };
 

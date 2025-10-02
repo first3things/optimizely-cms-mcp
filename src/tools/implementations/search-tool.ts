@@ -20,7 +20,16 @@ import { DiscoveryCache } from '../../services/discovery-cache.js';
  */
 export class SearchTool extends BaseTool<SearchInput, SearchOutput> {
   protected readonly name = 'search';
-  protected readonly description = 'Search for content using Graph API with intelligent query building';
+  protected readonly description = `Search for content using Graph API with intelligent query building.
+
+IMPORTANT: Use 'discover' tool FIRST to find available content types and fields.
+
+Example workflow:
+1. discover({"target": "types"}) - Find content types
+2. discover({"target": "fields", "contentType": "ArticlePage"}) - Find fields
+3. search({"query": "mcp", "contentTypes": ["ArticlePage"]}) - Search content
+
+This tool automatically builds optimal GraphQL queries based on discovered schema.`;
   
   protected readonly inputSchema = z.object({
     query: z.string().optional().describe('Search query text'),

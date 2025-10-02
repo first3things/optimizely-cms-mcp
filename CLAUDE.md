@@ -1,5 +1,25 @@
 # Optimizely CMS MCP Server Guide
 
+## 🚀 START HERE - Quick Reference for Claude
+
+When searching for content in Optimizely CMS, **ALWAYS** follow this workflow:
+
+```bash
+# Step 1: Get help (if needed)
+help({})
+
+# Step 2: Discover available content types
+discover({"target": "types"})
+
+# Step 3: Discover fields for the content type you want
+discover({"target": "fields", "contentType": "ArticlePage"})
+
+# Step 4: Search using discovered information
+search({"query": "your search", "contentTypes": ["ArticlePage"]})
+```
+
+**Never use `graph-query` with guessed field names!** Always discover first.
+
 ## Overview
 
 The Optimizely CMS MCP (Model Context Protocol) server is a **multi-tenant, discovery-first integration** designed to work with ANY Optimizely CMS instance without requiring hardcoded assumptions about content types, field names, or schema structures.
@@ -174,19 +194,54 @@ The Graph API provides fast, cached content retrieval:
 - **API_ERROR**: External API failures
 - **AUTH_ERROR**: Authentication issues
 
+## 🚀 Quick Start Workflow
+
+### The Discovery-First Approach
+
+**IMPORTANT**: Always start with the `help` tool to learn the workflow!
+
+```bash
+# 1. Get oriented
+help({})                     # General help
+help({"topic": "workflow"})  # Learn the discovery-first workflow
+
+# 2. Discover what's available
+discover({"target": "types"})                          # Find all content types
+discover({"target": "fields", "contentType": "ArticlePage"})  # Get fields for a type
+
+# 3. Search for content
+search({"query": "mcp server", "contentTypes": ["ArticlePage"]})
+
+# 4. Get specific content
+locate({"identifier": "/news/article-1"})              # Find by path
+retrieve({"identifier": "12345"})                      # Get full content
+```
+
+### Common Mistakes to Avoid
+
+❌ **DON'T** use `graph-query` directly with assumed field names  
+✅ **DO** use `discover` first, then `search` with discovered fields
+
+❌ **DON'T** assume fields like "Name", "Title", "Description" exist  
+✅ **DO** discover actual field names (might be "Heading", "SubHeading", etc.)
+
+❌ **DON'T** skip discovery when you get field errors  
+✅ **DO** run `discover({"target": "fields", "contentType": "YourType"})` to see what's available
+
 ## Best Practices
 
-### For AI Assistants
-1. **Always discover first**: Never assume content types exist
-2. **Use hints wisely**: Provide type hints but expect discovery
-3. **Handle variations**: Content types may vary significantly
-4. **Check capabilities**: Not all CMSs have all features
+### For AI Assistants (Claude)
+1. **Start with help**: Run `help({})` to understand the workflow
+2. **Always discover first**: Use `discover` before any content operations
+3. **Use new tools**: Prefer `search` over `graph-query`, `locate` over `graph-get-by-id`
+4. **Read error suggestions**: They guide you to the correct workflow
+5. **Check field names**: When you get field errors, discover the actual fields
 
 ### For Developers
-1. **Follow the pattern**: Discover → Analyze → Execute → Validate
-2. **Cache appropriately**: Balance freshness with performance
-3. **Handle errors gracefully**: Provide actionable suggestions
-4. **Document discoveries**: Help users understand their CMS
+1. **Follow the pattern**: Help → Discover → Search/Locate → Retrieve
+2. **Cache appropriately**: Use `useCache: true` for repeated discoveries
+3. **Handle errors gracefully**: Check the suggestions in error messages
+4. **Learn from discovery**: Save discovered schemas for reference
 
 ## API Documentation References
 

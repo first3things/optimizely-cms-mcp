@@ -19,7 +19,16 @@ import { ValidationError, NotFoundError } from '../../utils/errors.js';
  */
 export class LocateTool extends BaseTool<LocateInput, LocateOutput> {
   protected readonly name = 'locate';
-  protected readonly description = 'Find specific content by ID or path using Graph API';
+  protected readonly description = `Find specific content by ID, key, GUID, or URL path.
+
+This tool auto-detects the identifier type or you can specify it explicitly.
+
+Examples:
+- By path: locate({"identifier": "/news/article-1"})
+- By ID: locate({"identifier": "12345"})
+- By GUID: locate({"identifier": "550e8400-e29b-41d4-a716-446655440000"})
+
+The tool will return detailed metadata about the found content.`;
   
   protected readonly inputSchema = z.object({
     identifier: z.string().describe('Content ID, key, GUID, or URL path'),
