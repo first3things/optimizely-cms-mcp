@@ -5,6 +5,7 @@ import { SchemaDiscoveryService } from '../../services/schema-discovery.js';
 import { SchemaFieldDiscovery } from '../../logic/content/schema-field-discovery.js';
 import { executeContentTypeDiscovery, executeSmartContentTypeMatch } from '../../logic/types/smart-discovery.js';
 import { SchemaIntrospector } from '../../logic/graph/schema-introspector.js';
+import { OptimizelyGraphClient } from '../../clients/graph-client.js';
 import { getDiscoveryCache, withDiscoveryCache } from '../../services/discovery-cache.js';
 import type { ContentTypeInfo, FieldInfo, SchemaInfo } from '../../types/discovery.js';
 
@@ -99,13 +100,15 @@ This tool helps you understand what content and fields are available in the CMS.
   private async initializeServices(config: any): Promise<void> {
     if (!this.schemaService) {
       const graphConfig = getGraphConfig(config);
-      this.schemaService = new SchemaDiscoveryService(graphConfig);
+      const graphClient = new OptimizelyGraphClient(graphConfig);
+      this.schemaService = new SchemaDiscoveryService(graphClient);
       await this.schemaService.initialize();
     }
     
     if (!this.introspector) {
       const graphConfig = getGraphConfig(config);
-      this.introspector = new SchemaIntrospector(graphConfig);
+      const graphClient = new OptimizelyGraphClient(graphConfig);
+      this.introspector = new SchemaIntrospector(graphClient);
     }
   }
   
