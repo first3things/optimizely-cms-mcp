@@ -5,7 +5,8 @@ import { SchemaDiscoveryService } from '../../services/schema-discovery.js';
 import { SchemaFieldDiscovery } from '../../logic/content/schema-field-discovery.js';
 import { executeContentTypeDiscovery, executeSmartContentTypeMatch } from '../../logic/types/smart-discovery.js';
 import { SchemaIntrospector } from '../../logic/graph/schema-introspector.js';
-import { withCache } from '../../utils/cache.js';
+import { getDiscoveryCache, withDiscoveryCache } from '../../services/discovery-cache.js';
+import type { ContentTypeInfo, FieldInfo, SchemaInfo } from '../../types/discovery.js';
 
 // Input schema for the discovery tool
 const discoverSchema = z.object({
@@ -18,41 +19,7 @@ const discoverSchema = z.object({
 
 type DiscoverInput = z.infer<typeof discoverSchema>;
 
-interface ContentTypeInfo {
-  name: string;
-  displayName?: string;
-  description?: string;
-  category?: string;
-  isAbstract?: boolean;
-  baseType?: string;
-  interfaces?: string[];
-}
-
-interface FieldInfo {
-  name: string;
-  type: string;
-  required: boolean;
-  description?: string;
-  searchable?: boolean;
-  localizable?: boolean;
-  allowedTypes?: string[];
-  validationRules?: any[];
-}
-
-interface SchemaInfo {
-  contentType: string;
-  fields: FieldInfo[];
-  metadata?: {
-    hasUrl?: boolean;
-    hasNavigation?: boolean;
-    hasVersions?: boolean;
-    hasSeo?: boolean;
-  };
-  composition?: {
-    supportsContentAreas?: boolean;
-    allowedTypes?: string[];
-  };
-}
+// Types are now imported from discovery.ts
 
 interface DiscoverOutput {
   target: string;
@@ -79,6 +46,7 @@ export class DiscoverTool extends BaseTool<DiscoverInput, DiscoverOutput> {
   
   private schemaService: SchemaDiscoveryService | null = null;
   private introspector: SchemaIntrospector | null = null;
+  private discoveryCache = getDiscoveryCache();
   
   protected async run(input: DiscoverInput, context: ToolContext): Promise<DiscoverOutput> {
     const { config } = context;
@@ -94,19 +62,14 @@ export class DiscoverTool extends BaseTool<DiscoverInput, DiscoverOutput> {
       data: {}
     };
     
-    // Use caching if enabled
-    const cacheKey = this.getCacheKey(input.target, input.contentType || 'all');
+    // Use discovery cache if enabled
     if (input.useCache) {
-      const cached = await withCache(
-        cacheKey,
-        async () => this.performDiscovery(input, config),
-        300000 // 5 minute cache
-      );
-      result.data = cached.data;
-      result.cached = cached.fromCache || false;
+      result.data = await this.performCachedDiscovery(input, config);
+      result.cached = true;
     } else {
       const discovered = await this.performDiscovery(input, config);
       result.data = discovered.data;
+      result.cached = false;
     }
     
     // Add summary if discovering all
@@ -133,6 +96,101 @@ export class DiscoverTool extends BaseTool<DiscoverInput, DiscoverOutput> {
     if (!this.introspector) {
       const graphConfig = getGraphConfig(config);
       this.introspector = new SchemaIntrospector(graphConfig);
+    }
+  }
+  
+  private async performCachedDiscovery(input: DiscoverInput, config: any): Promise<DiscoverOutput['data']> {
+    switch (input.target) {
+      case 'types': {
+        // Try cache first
+        const cached = await this.discoveryCache.getCachedTypes();
+        if (cached) {
+          this.logger.debug('Using cached content types');
+          return { types: cached.data };
+        }
+        
+        // Perform discovery and cache
+        const types = await this.discoverTypes(config, input);
+        await this.discoveryCache.cacheTypes(types);
+        return { types };
+      }
+      
+      case 'fields': {
+        if (!input.contentType) {
+          throw new Error('contentType is required when target is "fields"');
+        }
+        
+        // Try cache first
+        const cached = await this.discoveryCache.getCachedFields(input.contentType);
+        if (cached) {
+          this.logger.debug(`Using cached fields for ${input.contentType}`);
+          return { fields: cached.data };
+        }
+        
+        // Perform discovery and cache
+        const fields = await this.discoverFields(config, input.contentType, input);
+        await this.discoveryCache.cacheFields(input.contentType, fields);
+        return { fields };
+      }
+      
+      case 'schema': {
+        if (!input.contentType) {
+          throw new Error('contentType is required when target is "schema"');
+        }
+        
+        // Try cache first
+        const cached = await this.discoveryCache.getCachedSchema(input.contentType);
+        if (cached) {
+          this.logger.debug(`Using cached schema for ${input.contentType}`);
+          return { schema: cached.data };
+        }
+        
+        // Perform discovery and cache
+        const schema = await this.discoverSchema(config, input.contentType, input);
+        await this.discoveryCache.cacheSchema(input.contentType, schema);
+        return { schema };
+      }
+      
+      case 'all': {
+        // For 'all', we combine cached and fresh data progressively
+        const data: DiscoverOutput['data'] = {};
+        
+        // Get types (potentially from cache)
+        const typesCached = await this.discoveryCache.getCachedTypes();
+        if (typesCached) {
+          data.types = typesCached.data;
+          this.logger.debug('Using cached content types for "all" discovery');
+        } else {
+          data.types = await this.discoverTypes(config, input);
+          await this.discoveryCache.cacheTypes(data.types);
+        }
+        
+        // Get fields for concrete types
+        const allFields: FieldInfo[] = [];
+        const typeCount = data.types.length;
+        
+        for (let i = 0; i < typeCount; i++) {
+          const type = data.types[i];
+          if (!type.isAbstract) {
+            // Try cache first for each type
+            const fieldsCached = await this.discoveryCache.getCachedFields(type.name);
+            if (fieldsCached) {
+              allFields.push(...fieldsCached.data);
+            } else {
+              const fields = await this.discoverFields(config, type.name, input);
+              await this.discoveryCache.cacheFields(type.name, fields);
+              allFields.push(...fields);
+            }
+          }
+          this.reportProgress(`Processing ${i + 1}/${typeCount} types...`, 33 + (33 * (i + 1) / typeCount));
+        }
+        
+        data.fields = allFields;
+        return data;
+      }
+      
+      default:
+        throw new Error(`Unknown discovery target: ${input.target}`);
     }
   }
   
