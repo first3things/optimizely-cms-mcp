@@ -4,6 +4,7 @@ import type { ToolContext } from '../../types/tools.js';
 import { OptimizelyGraphClient } from '../../clients/graph-client.js';
 import { SchemaIntrospector } from '../../logic/graph/schema-introspector.js';
 import { DiscoveryCache } from '../../services/discovery-cache.js';
+import { getLogger } from '../../utils/logger.js';
 
 /**
  * Search tool - Find content using Graph API with intelligent querying
@@ -49,6 +50,7 @@ This tool automatically builds optimal GraphQL queries based on discovered schem
 
   private introspector: SchemaIntrospector | null = null;
   private discoveryCache: DiscoveryCache | null = null;
+  private logger = getLogger();
 
   async initialize(context: ToolContext): Promise<void> {
     const graphClient = new OptimizelyGraphClient({
@@ -197,11 +199,11 @@ This tool automatically builds optimal GraphQL queries based on discovered schem
 
     // Content type filter
     if (input.contentTypes && input.contentTypes.length > 0) {
-      const typeConditions = input.contentTypes.map(type => `{ _metadata: { types: { eq: "${type}" } } }`);
+      const typeConditions = input.contentTypes.map(type => `_metadata: { types: { eq: "${type}" } }`);
       if (typeConditions.length === 1) {
         conditions.push(typeConditions[0]);
       } else {
-        conditions.push(`_or: [${typeConditions.join(', ')}]`);
+        conditions.push(`_or: [${typeConditions.map(tc => `{ ${tc} }`).join(', ')}]`);
       }
     }
 
@@ -269,14 +271,33 @@ This tool automatically builds optimal GraphQL queries based on discovered schem
     const fieldsByType: Map<string, string[]> = new Map();
     
     for (const typeName of contentTypes) {
-      const fields = await this.discoveryCache!.getContentTypeFields(typeName);
-      const searchableFields = fields
-        .filter(f => f.searchable && this.isBasicField(f))
-        .map(f => f.name)
-        .slice(0, 10); // Limit to prevent query bloat
-      
-      if (searchableFields.length > 0) {
-        fieldsByType.set(typeName, searchableFields);
+      try {
+        // Try to get from cache first
+        const cached = await this.discoveryCache!.getCachedFields(typeName);
+        if (cached && cached.data) {
+          const searchableFields = cached.data
+            .filter(f => f.searchable && this.isBasicField(f))
+            .map(f => f.name)
+            .slice(0, 10); // Limit to prevent query bloat
+          
+          if (searchableFields.length > 0) {
+            fieldsByType.set(typeName, searchableFields);
+          }
+        } else if (this.introspector) {
+          // Fall back to introspector if not cached
+          const contentType = await this.introspector.getContentType(typeName);
+          if (contentType) {
+            const searchableFields = contentType.searchableFields
+              .filter(name => this.isBasicFieldName(name))
+              .slice(0, 10);
+            
+            if (searchableFields.length > 0) {
+              fieldsByType.set(typeName, searchableFields);
+            }
+          }
+        }
+      } catch (error) {
+        this.logger.warn(`Could not get fields for type ${typeName}`, error);
       }
     }
 
@@ -290,6 +311,11 @@ This tool automatically builds optimal GraphQL queries based on discovered schem
     }
 
     return fragments.join('');
+  }
+
+  private isBasicFieldName(fieldName: string): boolean {
+    // Filter out complex fields by name patterns
+    return !fieldName.includes('_') || fieldName === '_score';
   }
 
   private isBasicField(field: any): boolean {

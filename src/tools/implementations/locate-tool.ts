@@ -19,20 +19,20 @@ import { ValidationError, NotFoundError } from '../../utils/errors.js';
  */
 export class LocateTool extends BaseTool<LocateInput, LocateOutput> {
   protected readonly name = 'locate';
-  protected readonly description = `Find specific content by ID, key, GUID, or URL path.
+  protected readonly description = `Find specific content by ID, key, or URL path.
 
 This tool auto-detects the identifier type or you can specify it explicitly.
 
 Examples:
 - By path: locate({"identifier": "/news/article-1"})
-- By ID: locate({"identifier": "12345"})
-- By GUID: locate({"identifier": "550e8400-e29b-41d4-a716-446655440000"})
+- By key: locate({"identifier": "f3e8ef7f63ac45758a1dca8fbbde8d82"})
+- By key with hyphens: locate({"identifier": "f3e8ef7f-63ac-4575-8a1d-ca8fbbde8d82"})
 
 The tool will return detailed metadata about the found content.`;
   
   protected readonly inputSchema = z.object({
-    identifier: z.string().describe('Content ID, key, GUID, or URL path'),
-    identifierType: z.enum(['auto', 'id', 'key', 'guid', 'path']).default('auto').describe('Type of identifier'),
+    identifier: z.string().describe('Content ID, key, or URL path'),
+    identifierType: z.enum(['auto', 'id', 'key', 'path']).default('auto').describe('Type of identifier'),
     locale: z.string().default('en').describe('Content locale'),
     version: z.string().optional().describe('Specific version to retrieve'),
     includeChildren: z.boolean().default(false).describe('Include child content'),
@@ -86,24 +86,28 @@ The tool will return detailed metadata about the found content.`;
     // Auto-detect the type
     identifier = identifier.trim();
 
-    // GUID pattern (with or without hyphens)
-    const guidPattern = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
-    if (guidPattern.test(identifier)) {
-      return { type: 'guid', normalizedId: identifier.replace(/-/g, '') };
-    }
-
     // URL path (starts with /)
     if (identifier.startsWith('/')) {
       return { type: 'path', normalizedId: identifier };
     }
 
-    // Key pattern (numeric_locale format)
+    // Key pattern - 32 hex chars (with or without hyphens)
+    // This covers both GUID-like format and actual keys
+    const keyPattern = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
+    const simpleKeyPattern = /^[0-9a-f]{32}$/i;
+    
+    if (keyPattern.test(identifier) || simpleKeyPattern.test(identifier)) {
+      // Remove hyphens to get key format
+      return { type: 'key', normalizedId: identifier.replace(/-/g, '') };
+    }
+
+    // Numeric key pattern (older format)
     if (/^\d+(_[a-z]{2})?$/i.test(identifier)) {
       return { type: 'key', normalizedId: identifier };
     }
 
-    // Default to ID (could be numeric or custom format)
-    return { type: 'id', normalizedId: identifier };
+    // Default to key (most flexible)
+    return { type: 'key', normalizedId: identifier };
   }
 
   private buildLocateQuery(identifierType: string, input: LocateInput): string {
@@ -144,19 +148,12 @@ The tool will return detailed metadata about the found content.`;
     switch (identifierType) {
       case 'key':
         return '{ _metadata: { key: { eq: $identifier } } }';
-      case 'guid':
-        return '{ _metadata: { guid: { eq: $identifier } } }';
       case 'path':
-        return '{ _metadata: { url: { default: { eq: $path } } } }';
+        return '{ _metadata: { url: { hierarchical: { eq: $path } } } }';
       case 'id':
       default:
-        // Try multiple fields for ID
-        return `{
-          _or: [
-            { _metadata: { key: { eq: $identifier } } },
-            { _metadata: { guid: { eq: $identifier } } }
-          ]
-        }`;
+        // For ID, just use key
+        return '{ _metadata: { key: { eq: $identifier } } }';
     }
   }
 
@@ -166,7 +163,6 @@ The tool will return detailed metadata about the found content.`;
     // Always include core metadata
     fields.push('      _metadata {');
     fields.push('        key');
-    fields.push('        guid');
     fields.push('        version');
     fields.push('        locale');
     fields.push('        displayName');
@@ -174,20 +170,14 @@ The tool will return detailed metadata about the found content.`;
     fields.push('        url {');
     fields.push('          default');
     fields.push('          internal');
+    fields.push('          hierarchical');
     fields.push('        }');
     fields.push('        published');
     fields.push('        lastModified');
     fields.push('        created');
-    fields.push('        createdBy');
-    fields.push('        lastModifiedBy');
     fields.push('        types');
     fields.push('      }');
     fields.push('      _type: __typename');
-
-    // Include parent reference
-    fields.push('      _metadata {');
-    fields.push('        container');
-    fields.push('      }');
 
     // Include children if requested
     if (input.includeChildren) {
@@ -272,7 +262,6 @@ The tool will return detailed metadata about the found content.`;
       found: true,
       content: {
         id: metadata.key,
-        guid: metadata.guid,
         type: content._type,
         displayName: metadata.displayName,
         status: metadata.status,
@@ -280,12 +269,10 @@ The tool will return detailed metadata about the found content.`;
         version: metadata.version,
         url: metadata.url?.default,
         internalUrl: metadata.url?.internal,
+        hierarchicalUrl: metadata.url?.hierarchical,
         created: metadata.created,
-        createdBy: metadata.createdBy,
         lastModified: metadata.lastModified,
-        lastModifiedBy: metadata.lastModifiedBy,
         published: metadata.published,
-        container: metadata.container,
         contentTypes: metadata.types || []
       },
       identifierUsed: input.identifier,
@@ -338,7 +325,6 @@ interface LocateOutput {
 
 interface ContentLocation {
   id: string;
-  guid?: string;
   type: string;
   displayName: string;
   status: string;
@@ -346,12 +332,10 @@ interface ContentLocation {
   version: string;
   url?: string;
   internalUrl?: string;
+  hierarchicalUrl?: string;
   created: string;
-  createdBy: string;
   lastModified: string;
-  lastModifiedBy: string;
   published?: string;
-  container?: string;
   contentTypes: string[];
 }
 

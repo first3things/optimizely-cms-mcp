@@ -155,14 +155,16 @@ This tool provides complete property values, block data, and version info.`;
       }
     }
 
-    // Try as GUID
-    const guidPattern = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
-    if (guidPattern.test(identifier)) {
+    // Try as key directly (GUIDs without hyphens look like keys)
+    const keyPattern = /^[0-9a-f]{32}$/i;
+    if (keyPattern.test(identifier.replace(/-/g, ''))) {
+      // Remove hyphens if present to get the key format
+      const key = identifier.replace(/-/g, '');
       const query = `
-        query LocateByGuid($guid: String!, $locale: [Locales!]) {
+        query LocateByKey($key: String!, $locale: [Locales!]) {
           _Content(
             locale: $locale,
-            where: { _metadata: { guid: { eq: $guid } } },
+            where: { _metadata: { key: { eq: $key } } },
             limit: 1
           ) {
             items {
@@ -172,7 +174,7 @@ This tool provides complete property values, block data, and version info.`;
         }
       `;
 
-      const result = await graphClient.query(query, { guid: identifier, locale: [locale] });
+      const result = await graphClient.query(query, { key, locale: [locale] });
       
       if (result._Content?.items?.length > 0) {
         return result._Content.items[0]._metadata.key;
