@@ -20,6 +20,7 @@ import { AnalyzeTool } from './tools/implementations/analyze-tool.js';
 import { SearchTool } from './tools/implementations/search-tool.js';
 import { LocateTool } from './tools/implementations/locate-tool.js';
 import { RetrieveTool } from './tools/implementations/retrieve-tool.js';
+import { GetTool } from './tools/implementations/get-tool.js';
 
 export async function registerAllTools(server: Server, config: Config): Promise<void> {
   const logger = getLogger();
@@ -71,9 +72,10 @@ export async function registerAllTools(server: Server, config: Config): Promise<
 
   // Register new tools using ToolRegistry
   const toolRegistry = new ToolRegistry(config);
-  
+
   // Register new tools FIRST (they should be preferred)
   toolRegistry.register(new HelpTool());
+  toolRegistry.register(new GetTool());  // 🚀 NEW UNIFIED TOOL - Use this first!
   toolRegistry.register(new DiscoverTool());
   toolRegistry.register(new AnalyzeTool());
   toolRegistry.register(new SearchTool());
@@ -262,11 +264,12 @@ async function handleGetDocumentation(params: { category?: string }, context: To
     // NEW TOOLS (Recommended - use these first!)
     'discovery-first': [
       'help',      // 🚀 START HERE - Learn the discovery-first workflow
+      'get',       // 🌟 NEW! Get content by ANY identifier in ONE call
       'discover',  // Find content types and fields dynamically
       'analyze',   // Deep analysis of content types
-      'search',    // Intelligent content search
-      'locate',    // Find content by ID/path
-      'retrieve'   // Get full content details
+      'search',    // ⚠️ Prefer 'get' - Intelligent content search
+      'locate',    // ⚠️ Prefer 'get' - Find content by ID/path
+      'retrieve'   // ⚠️ Prefer 'get' - Get full content details
     ],
     utility: ['health-check', 'get-config', 'get-documentation'],
     // LEGACY TOOLS (Being phased out - use new tools above)

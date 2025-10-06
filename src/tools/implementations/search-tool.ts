@@ -221,25 +221,44 @@ This tool automatically builds optimal GraphQL queries based on discovered schem
   }
 
   private buildFilterCondition(field: string, value: any): string {
+    // Handle nested field paths (e.g., _metadata.key -> _metadata: { key: { ... } })
+    if (field.includes('.')) {
+      const parts = field.split('.');
+      const condition = this.buildValueCondition(value);
+      
+      // Build nested structure from right to left
+      let result = `${parts[parts.length - 1]}: ${condition}`;
+      for (let i = parts.length - 2; i >= 0; i--) {
+        result = `${parts[i]}: { ${result} }`;
+      }
+      return result;
+    }
+
+    // For non-nested fields, use the original logic
+    const condition = this.buildValueCondition(value);
+    return `${field}: ${condition}`;
+  }
+
+  private buildValueCondition(value: any): string {
     if (value === null) {
-      return `${field}: { eq: null }`;
+      return '{ eq: null }';
     }
 
     if (typeof value === 'string') {
-      return `${field}: { eq: "${value}" }`;
+      return `{ eq: "${value}" }`;
     }
 
     if (typeof value === 'number') {
-      return `${field}: { eq: ${value} }`;
+      return `{ eq: ${value} }`;
     }
 
     if (typeof value === 'boolean') {
-      return `${field}: { eq: ${value} }`;
+      return `{ eq: ${value} }`;
     }
 
     if (Array.isArray(value)) {
       const values = value.map(v => typeof v === 'string' ? `"${v}"` : v).join(', ');
-      return `${field}: { in: [${values}] }`;
+      return `{ in: [${values}] }`;
     }
 
     if (typeof value === 'object') {
@@ -252,10 +271,10 @@ This tool automatically builds optimal GraphQL queries based on discovered schem
       if ('contains' in value) parts.push(`contains: "${value.contains}"`);
       if ('startsWith' in value) parts.push(`startsWith: "${value.startsWith}"`);
       
-      return `${field}: { ${parts.join(', ')} }`;
+      return `{ ${parts.join(', ')} }`;
     }
 
-    return `${field}: { eq: "${value}" }`;
+    return `{ eq: "${value}" }`;
   }
 
   private async getSearchableFields(contentTypes?: string[]): Promise<string> {
