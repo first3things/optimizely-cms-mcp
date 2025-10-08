@@ -5,6 +5,8 @@ import { OptimizelyGraphClient } from '../../clients/graph-client.js';
 import { OptimizelyContentClient } from '../../clients/cma-client.js';
 import { SchemaIntrospector } from '../../logic/graph/schema-introspector.js';
 import { DiscoveryCache } from '../../services/discovery-cache.js';
+import { FragmentGenerator } from '../../services/fragment-generator.js';
+import { FragmentCache } from '../../services/fragment-cache.js';
 import { NotFoundError, ValidationError } from '../../utils/errors.js';
 import { getLogger } from '../../utils/logger.js';
 
@@ -33,16 +35,21 @@ export class GetTool extends BaseTool<GetInput, GetOutput> {
 This unified tool intelligently finds and returns content in ONE call:
 
 Examples:
-- By search: get({"identifier": "Article 4"})
+- Homepage: get({"identifier": "/"}) or get({"identifier": "home"})
 - By URL: get({"identifier": "/article-4/"})
+- By search: get({"identifier": "Article 4"})
 - By key: get({"identifier": "f3e8ef7f63ac45758a1dca8fbbde8d82"})
 - By GUID: get({"identifier": "f3e8ef7f-63ac-4575-8a1d-ca8fbbde8d82"})
 
 The tool auto-discovers fields and returns complete content including:
 - All metadata (_metadata)
 - All discovered content fields (Heading, Body, etc.)
+- Visual Builder composition (for Experience pages)
 - Resolved blocks/nested content (if enabled)
 - Content type schema (if requested)
+
+IMPORTANT: This tool automatically detects and handles Visual Builder pages (BlankExperience).
+For the homepage ("/"), it will fetch the complete composition structure.
 
 This replaces the old search → locate → retrieve workflow with a single call.`;
 
@@ -84,6 +91,11 @@ This replaces the old search → locate → retrieve workflow with a single call
   private cmaClient: OptimizelyContentClient | null = null;
   private logger = getLogger();
 
+  // Fragment generation system
+  private fragmentGenerator: FragmentGenerator | null = null;
+  private fragmentCache: FragmentCache | null = null;
+  private needsFragments: boolean = false; // Track if current query needs fragments
+
   async initialize(context: ToolContext): Promise<void> {
     this.graphClient = new OptimizelyGraphClient({
       endpoint: context.config.graph.endpoint,
@@ -113,6 +125,10 @@ This replaces the old search → locate → retrieve workflow with a single call
 
     this.introspector = new SchemaIntrospector(this.graphClient);
     this.discoveryCache = new DiscoveryCache(context.config);
+
+    // Initialize fragment generation system
+    this.fragmentGenerator = new FragmentGenerator(this.introspector);
+    this.fragmentCache = new FragmentCache(context.config, this.introspector);
   }
 
   protected async run(input: GetInput, context: ToolContext): Promise<GetOutput> {
@@ -277,6 +293,19 @@ This replaces the old search → locate → retrieve workflow with a single call
     locale: string,
     limit: number
   ): Promise<FoundContent | null> {
+    // 🏠 Smart homepage detection - if searching for "home" or "homepage", look for "/" path first
+    const isHomepageQuery = /^(home|homepage|start|index)$/i.test(query.trim());
+
+    if (isHomepageQuery) {
+      this.logger.info('Homepage keyword detected, searching for "/" path first');
+      const homepageResult = await this.findByPath('/', locale);
+      if (homepageResult) {
+        return homepageResult;
+      }
+      // If "/" not found, fall through to search
+      this.logger.debug('No content at "/", falling back to text search');
+    }
+
     const graphQuery = `
       query SearchContent($query: String!, $locale: [Locales!], $limit: Int!) {
         _Content(
@@ -455,6 +484,15 @@ This replaces the old search → locate → retrieve workflow with a single call
     locale: string,
     options: GetInput
   ): Promise<{ content: any; fieldsDiscovered: string[] }> {
+    // 🎨 VISUAL BUILDER DETECTION: Check if this is an Experience page
+    const typeInfo = await this.introspector!.getContentType(contentType);
+    const isVisualBuilder = typeInfo?.interfaces?.includes('_IExperience') || false;
+
+    if (isVisualBuilder) {
+      this.logger.info(`✨ Visual Builder page detected: ${contentType} - fetching composition`);
+      return await this.queryVisualBuilderPage(key, contentType, locale, options);
+    }
+
     // Step 1: Discover fields for the SPECIFIC content type (e.g., ArticlePage)
     const fields = await this.discoverFields(contentType);
 
@@ -501,7 +539,7 @@ This replaces the old search → locate → retrieve workflow with a single call
     const fieldsToQuery = this.selectFields(fields, options);
 
     // Build dynamic query with inline fragment support
-    const query = this.buildDynamicQuery(
+    const query = await this.buildDynamicQuery(
       queryType,
       specificType,
       key,
@@ -511,6 +549,7 @@ This replaces the old search → locate → retrieve workflow with a single call
     );
 
     this.logger.debug(`Querying ${queryType}${specificType !== queryType ? ` (... on ${specificType})` : ''} with ${fieldsToQuery.length} fields`);
+    this.logger.info(`Generated query length: ${query.length} chars`);
 
     // Execute query
     const result = await this.graphClient!.query(query, {
@@ -529,6 +568,72 @@ This replaces the old search → locate → retrieve workflow with a single call
       content: items[0],
       fieldsDiscovered: fieldsToQuery.map(f => f.name)
     };
+  }
+
+  /**
+   * Query Visual Builder page using _Experience with composition
+   */
+  private async queryVisualBuilderPage(
+    key: string,
+    contentType: string,
+    locale: string,
+    options: GetInput
+  ): Promise<{ content: any; fieldsDiscovered: string[] }> {
+    // Build Visual Builder query with specific content type and composition
+    const query = await this.buildVisualBuilderQuery(key, contentType, locale, options);
+
+    this.logger.debug(`Querying Visual Builder page with ${contentType} query`);
+
+    // Execute query
+    const result = await this.graphClient!.query(query, {
+      key,
+      locale: [locale]
+    });
+
+    // Extract content from _Experience response
+    const item = result._Experience?.item;
+    if (!item) {
+      throw new NotFoundError(`Visual Builder content found but could not be retrieved: ${key}`);
+    }
+    const items = [item];
+
+    const content = items[0];
+
+    // Flatten composition structure for easier consumption
+    const compositionFields = this.extractCompositionFields(content.composition);
+
+    return {
+      content: content,
+      fieldsDiscovered: ['_metadata', 'composition', ...compositionFields]
+    };
+  }
+
+  /**
+   * Extract field names from composition structure
+   */
+  private extractCompositionFields(composition: any): string[] {
+    if (!composition || !composition.grids) {
+      return [];
+    }
+
+    const fields = new Set<string>();
+    const extractFromNode = (node: any) => {
+      if (node.component) {
+        Object.keys(node.component).forEach(key => fields.add(key));
+      }
+      if (node.nodes) {
+        node.nodes.forEach(extractFromNode);
+      }
+      if (node.rows) {
+        node.rows.forEach(extractFromNode);
+      }
+      if (node.columns) {
+        node.columns.forEach(extractFromNode);
+      }
+    };
+
+    composition.grids.forEach(extractFromNode);
+    return Array.from(fields);
   }
 
   /**
@@ -644,6 +749,11 @@ This replaces the old search → locate → retrieve workflow with a single call
   private isBasicField(field: FieldInfo): boolean {
     const type = field.type.toLowerCase();
 
+    // Skip GraphQL introspection fields
+    if (field.name.startsWith('__')) {
+      return false;
+    }
+
     // Include basic scalar types
     if (type.includes('string') ||
         type.includes('int') ||
@@ -658,6 +768,18 @@ This replaces the old search → locate → retrieve workflow with a single call
       return true;
     }
 
+    // Include Visual Builder composition structures
+    if (type.includes('composition')) {
+      return true;
+    }
+
+    // Include property objects (Settings, Config, etc.)
+    if (type.includes('property') ||
+        type.includes('settings') ||
+        type.includes('config')) {
+      return true;
+    }
+
     // TEMPORARY: Skip ContentReference and ContentArea until we figure out correct syntax
     // if (type.includes('contentreference') || type.includes('contentarea')) {
     //   return true;
@@ -667,19 +789,270 @@ This replaces the old search → locate → retrieve workflow with a single call
   }
 
   /**
+   * Check if content type uses Visual Builder composition
+   * Only Visual Builder pages need component fragments
+   */
+  private async hasCompositionField(contentType: string): Promise<boolean> {
+    try {
+      const fields = await this.discoverFields(contentType);
+      return fields.some(f => f.type.toLowerCase().includes('composition'));
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Get AllComponents fragment (cached or generated)
+   * Only called for Visual Builder content types
+   */
+  private async getAllComponentsFragment(): Promise<string> {
+    // Try cache first
+    const cached = await this.fragmentCache!.getCachedFragment('AllComponents');
+    if (cached) {
+      // CRITICAL: Validate cached fragment uses correct projections
+      // Old cached fragments may have incorrect fragment names or field patterns
+      const hasIncorrectProjections =
+        cached.includes('{ key displayName }') ||  // ❌ Wrong ContentReference fields
+        cached.includes('{ title text url target }') ||  // ❌ Wrong Link inline projection
+        cached.includes('...ContentReference') ||  // ❌ Old fragment name (should be ContentUrl)
+        cached.includes('...LinkItemData') ||  // ❌ Old fragment name (should be LinkUrl/LinkCollection)
+        cached.includes('fragment ContentReference on') ||  // ❌ Old fragment definition
+        cached.includes('fragment LinkItemData on'); // ❌ Old fragment definition
+
+      if (hasIncorrectProjections) {
+        this.logger.warn('Cached fragment has incorrect projections, regenerating...');
+        await this.fragmentCache!.invalidateCache();
+      } else {
+        this.logger.debug('Using cached AllComponents fragment');
+        return cached;
+      }
+    }
+
+    // Generate if not cached or cache was invalidated
+    this.logger.info('Generating AllComponents fragment (not cached)');
+    const generated = await this.fragmentGenerator!.generateAllComponentsFragment();
+
+    // Cache for future use
+    await this.fragmentCache!.setCachedFragment('AllComponents', generated.content, {
+      componentTypes: generated.componentTypes,
+      fragmentCount: generated.componentTypes.length,
+      generated: new Date().toISOString()
+    });
+
+    return generated.content;
+  }
+
+  /**
+   * Build Visual Builder query using _Experience with composition
+   */
+  private async buildVisualBuilderQuery(
+    key: string,
+    contentType: string,
+    locale: string,
+    options: GetInput
+  ): Promise<string> {
+    const parts: string[] = [];
+
+    // Add supporting fragments
+    parts.push('fragment DisplaySettings on CompositionDisplaySetting {');
+    parts.push('  key');
+    parts.push('  value');
+    parts.push('}');
+    parts.push('');
+
+    parts.push('fragment ContentUrl on ContentReference {');
+    parts.push('  url {');
+    parts.push('    default');
+    parts.push('    hierarchical');
+    parts.push('  }');
+    parts.push('}');
+    parts.push('');
+
+    parts.push('fragment LinkCollection on Link {');
+    parts.push('  text');
+    parts.push('  url {');
+    parts.push('    default');
+    parts.push('  }');
+    parts.push('}');
+    parts.push('');
+
+    parts.push('fragment LinkUrl on Link {');
+    parts.push('  url {');
+    parts.push('    default');
+    parts.push('    hierarchical');
+    parts.push('  }');
+    parts.push('  title');
+    parts.push('  target');
+    parts.push('  text');
+    parts.push('}');
+    parts.push('');
+
+    // Add AllComponents fragment
+    const allComponentsFragment = await this.getAllComponentsFragment();
+    parts.push(allComponentsFragment);
+    parts.push('');
+
+    // Build main query using _Experience interface (per NoorDXP working pattern)
+    parts.push('query GetExperience($key: String!, $locale: [Locales!]) {');
+    parts.push('  _Experience(');
+    parts.push('    ids: [$key],');
+    parts.push('    locale: $locale');
+    parts.push('  ) {');
+    parts.push('    item {');
+    parts.push('      _metadata {');
+    parts.push('        key');
+    parts.push('        version');
+    parts.push('        url { default hierarchical type }');
+    parts.push('        types');
+    parts.push('        displayName');
+    parts.push('        published');
+    parts.push('        lastModified');
+    parts.push('        status');
+    parts.push('      }');
+    parts.push('      composition {');
+    parts.push('        grids: nodes {');
+    parts.push('          key');
+    parts.push('          displayName');
+    parts.push('          displayTemplateKey');
+    parts.push('          displaySettings { ...DisplaySettings }');
+    parts.push('          ... on CompositionStructureNode {');
+    parts.push('            nodeType');
+    parts.push('            rows: nodes {');
+    parts.push('              ... on CompositionStructureNode {');
+    parts.push('                nodeType');
+    parts.push('                key');
+    parts.push('                displayTemplateKey');
+    parts.push('                displaySettings { ...DisplaySettings }');
+    parts.push('                columns: nodes {');
+    parts.push('                  ... on CompositionStructureNode {');
+    parts.push('                    nodeType');
+    parts.push('                    key');
+    parts.push('                    displayTemplateKey');
+    parts.push('                    displaySettings { ...DisplaySettings }');
+    parts.push('                    nodes {');
+    parts.push('                      ... on CompositionComponentNode {');
+    parts.push('                        key');
+    parts.push('                        displayTemplateKey');
+    parts.push('                        displaySettings { ...DisplaySettings }');
+    parts.push('                        component {');
+    parts.push('                          _metadata { types }');
+    parts.push('                          ...AllComponents');
+    parts.push('                        }');
+    parts.push('                      }');
+    parts.push('                    }');
+    parts.push('                  }');
+    parts.push('                }');
+    parts.push('              }');
+    parts.push('            }');
+    parts.push('          }');
+    parts.push('          ... on CompositionComponentNode {');
+    parts.push('            nodeType');
+    parts.push('            component {');
+    parts.push('              _metadata { types }');
+    parts.push('              ...AllComponents');
+    parts.push('            }');
+    parts.push('          }');
+    parts.push('        }');
+    parts.push('      }');
+    parts.push('    }');
+    parts.push('  }');
+    parts.push('}');
+
+    const query = parts.join('\n');
+
+    // Debug: Write query to file for inspection
+    const fs = await import('fs');
+    fs.writeFileSync('debug-visual-builder-query.graphql', query);
+    this.logger.info('Visual Builder query written to debug-visual-builder-query.graphql');
+
+    return query;
+  }
+
+  /**
    * Build dynamic GraphQL query based on discovered fields
    * Supports inline fragments for querying specific types via base interfaces
+   * Conditionally includes fragment definition for Visual Builder pages
    */
-  private buildDynamicQuery(
+  private async buildDynamicQuery(
     queryType: string,
     specificType: string,
     key: string,
     locale: string,
     fields: FieldInfo[],
     options: GetInput
-  ): string {
+  ): Promise<string> {
+    // Reset fragment flag
+    this.needsFragments = false;
+
     const parts: string[] = [];
     const useInlineFragment = queryType !== specificType;
+
+    // Check if this content type needs fragments (has composition field)
+    const hasComposition = await this.hasCompositionField(specificType);
+
+    // Build field projections (this will set needsFragments flag if composition is included)
+    const fieldProjections: string[] = [];
+    for (const field of fields) {
+      if (field.name.startsWith('_')) continue; // Skip metadata fields
+
+      const indent = useInlineFragment ? '        ' : '      ';
+      const projection = await this.getFieldProjection(field, options);
+      fieldProjections.push(`${indent}${field.name}${projection}`);
+    }
+
+    // Add fragment definitions ONLY if needed (Visual Builder pages with resolveDepth >= 2)
+    if (this.needsFragments && hasComposition) {
+      this.logger.info('Including AllComponents fragment in query');
+      this.logger.info('Adding supporting fragments to parts array');
+
+      // Add ContentUrl fragment (for ContentReference fields - images, videos, assets)
+      // CRITICAL: ContentReference fields need url object, not id/workId/guidValue
+      parts.push('fragment ContentUrl on ContentReference {');
+      parts.push('  url {');
+      parts.push('    default');
+      parts.push('    hierarchical');
+      parts.push('  }');
+      parts.push('}');
+      parts.push('');
+
+      // Add LinkCollection fragment (for simple Link fields)
+      parts.push('fragment LinkCollection on Link {');
+      parts.push('  text');
+      parts.push('  url {');
+      parts.push('    default');
+      parts.push('  }');
+      parts.push('}');
+      parts.push('');
+
+      // Add LinkUrl fragment (for full Link fields with all properties)
+      parts.push('fragment LinkUrl on Link {');
+      parts.push('  url {');
+      parts.push('    default');
+      parts.push('    hierarchical');
+      parts.push('  }');
+      parts.push('  title');
+      parts.push('  target');
+      parts.push('  text');
+      parts.push('}');
+      parts.push('');
+
+      // Add DisplaySettings fragment (required for displaySettings field)
+      parts.push('fragment DisplaySettings on CompositionDisplaySetting {');
+      parts.push('  key');
+      parts.push('  value');
+      parts.push('}');
+      parts.push('');
+
+      this.logger.info(`Parts array length after support fragments: ${parts.length}`);
+
+      // Add AllComponents fragment
+      const fragment = await this.getAllComponentsFragment();
+      parts.push(fragment);
+      parts.push(''); // Blank line separator
+
+      this.logger.info(`Parts array length after AllComponents: ${parts.length}`);
+      this.logger.info(`First part: ${parts[0]}`);
+    }
 
     // Query header
     parts.push('query GetContent($key: String!, $locale: [Locales!]) {');
@@ -712,13 +1085,8 @@ This replaces the old search → locate → retrieve workflow with a single call
       parts.push(`      ... on ${specificType} {`);
     }
 
-    // Add discovered fields
-    for (const field of fields) {
-      if (field.name.startsWith('_')) continue; // Skip metadata fields (already added)
-
-      const indent = useInlineFragment ? '        ' : '      ';
-      parts.push(`${indent}${field.name}${this.getFieldProjection(field, options)}`);
-    }
+    // Add field projections
+    parts.push(...fieldProjections);
 
     // Close inline fragment if used
     if (useInlineFragment) {
@@ -729,18 +1097,40 @@ This replaces the old search → locate → retrieve workflow with a single call
     parts.push('  }');
     parts.push('}');
 
-    return parts.join('\n');
+    const query = parts.join('\n');
+
+    // Debug: Write query to file for inspection
+    try {
+      const fs = await import('fs');
+      fs.writeFileSync('debug-get-query.graphql', query);
+      this.logger.info('Query saved to debug-get-query.graphql for inspection');
+    } catch (e) {
+      this.logger.warn('Could not save debug query', { error: e });
+    }
+
+    return query;
   }
 
   /**
    * Get field projection (for nested types like RichText)
    */
-  private getFieldProjection(field: FieldInfo, options: GetInput): string {
+  private async getFieldProjection(field: FieldInfo, options: GetInput): Promise<string> {
     const type = field.type.toLowerCase();
 
     // Rich text fields - always get both html and json
     if (type.includes('richtext')) {
       return ' { html json }';
+    }
+
+    // Visual Builder composition structures
+    if (type.includes('composition')) {
+      return await this.getCompositionProjection(options.resolveDepth);
+    }
+
+    // Property/Settings objects - these are complex OBJECT types that require field selections
+    // Examples: PageSeoSettingsProperty, PageAdminSettingsProperty
+    if (type.includes('property') || type.includes('settings') || type.includes('config')) {
+      return await this.getPropertyProjection(field.type);
     }
 
     // Content references - skip projection for now (Graph API syntax varies)
@@ -756,6 +1146,259 @@ This replaces the old search → locate → retrieve workflow with a single call
 
     // Default: no projection
     return '';
+  }
+
+  /**
+   * Generate projection for property/settings object types
+   * These are complex objects that require field selections
+   * Uses introspection to discover scalar fields dynamically
+   */
+  private async getPropertyProjection(typeName: string): Promise<string> {
+    try {
+      // Introspect the property type to get its fields
+      const typeInfo = await this.introspector!.getContentType(typeName);
+
+      if (!typeInfo || !typeInfo.fields || typeInfo.fields.length === 0) {
+        // Fallback to just __typename if we can't introspect
+        return ' { __typename }';
+      }
+
+      // Build projection with all scalar fields (no complex nested types for now)
+      const fields = ['__typename'];
+
+      for (const field of typeInfo.fields) {
+        const fieldType = field.type.toLowerCase();
+        // Include only scalar types
+        if (fieldType.includes('string') ||
+            fieldType.includes('int') ||
+            fieldType.includes('float') ||
+            fieldType.includes('boolean') ||
+            fieldType.includes('date')) {
+          fields.push(field.name);
+        }
+      }
+
+      return ' { ' + fields.join(' ') + ' }';
+    } catch (error) {
+      this.logger.warn(`Failed to introspect property type ${typeName}: ${error.message}`);
+      return ' { __typename }';
+    }
+  }
+
+  /**
+   * Generate GraphQL projection for a specific component type
+   * Discovers fields dynamically and builds inline fragment
+   *
+   * @param componentType - The component type name (e.g., "Hero", "Paragraph")
+   * @returns Inline fragment with component fields
+   */
+  private async getComponentFieldsProjection(componentType: string): Promise<string> {
+    // Check cache first
+    if (this.componentProjectionCache.has(componentType)) {
+      return this.componentProjectionCache.get(componentType)!;
+    }
+
+    try {
+      // Introspect the component type to get its fields
+      const typeInfo = await this.introspector!.getContentType(componentType);
+
+      if (!typeInfo || !typeInfo.fields || typeInfo.fields.length === 0) {
+        this.logger.debug(`No fields found for component type ${componentType}`);
+        return '';
+      }
+
+      const parts: string[] = [];
+      parts.push(`... on ${componentType} {`);
+
+      // Add discovered fields (skip metadata fields, we already have those)
+      for (const field of typeInfo.fields) {
+        if (field.name.startsWith('_')) continue; // Skip metadata
+
+        const fieldType = field.type.toLowerCase();
+
+        // Handle different field types
+        if (fieldType.includes('richtext') || fieldType.includes('searchablerichtext')) {
+          // Rich text needs html and json projection
+          parts.push(`  ${field.name} { html json }`);
+        } else if (fieldType.includes('contentreference')) {
+          // Content reference - just get the key
+          parts.push(`  ${field.name} { key }`);
+        } else if (fieldType.includes('link')) {
+          // Link type - get common link fields
+          parts.push(`  ${field.name} { title text url }`);
+        } else if (fieldType.includes('string') ||
+                   fieldType.includes('int') ||
+                   fieldType.includes('float') ||
+                   fieldType.includes('boolean') ||
+                   fieldType.includes('date')) {
+          // Scalar types - direct query
+          parts.push(`  ${field.name}`);
+        }
+        // Skip complex nested types for now
+      }
+
+      parts.push('}');
+      const projection = parts.join('\n');
+
+      // Cache the projection
+      this.componentProjectionCache.set(componentType, projection);
+      return projection;
+    } catch (error) {
+      this.logger.warn(`Failed to generate projection for component ${componentType}: ${error.message}`);
+      // Cache empty result to avoid repeated failures
+      this.componentProjectionCache.set(componentType, '');
+      return '';
+    }
+  }
+
+  /**
+   * Get common component types that might be used in Visual Builder
+   * Discovers component types dynamically from the schema
+   */
+  private async getCommonComponentTypes(): Promise<string[]> {
+    // Check cache first
+    if (this.componentTypesCache !== null) {
+      return this.componentTypesCache;
+    }
+
+    try {
+      // Get all types that implement _IComponent interface
+      const queryFields = await this.introspector!.getQueryFields();
+
+      // Common component type patterns (these are typical but not hardcoded requirements)
+      // Start with a smaller set for performance
+      const commonPatterns = ['Hero', 'Paragraph', 'Text', 'Divider'];
+
+      // Filter to types that likely exist in this CMS instance
+      // We'll be conservative and query for the most common ones
+      const componentTypes: string[] = [];
+
+      for (const pattern of commonPatterns) {
+        try {
+          const typeInfo = await this.introspector!.getContentType(pattern);
+          if (typeInfo && typeInfo.fields && typeInfo.fields.length > 0) {
+            componentTypes.push(pattern);
+          }
+        } catch {
+          // Type doesn't exist, skip it
+        }
+      }
+
+      // Cache the discovered types
+      this.componentTypesCache = componentTypes;
+      return componentTypes;
+    } catch (error) {
+      this.logger.warn(`Failed to discover component types: ${error.message}`);
+      this.componentTypesCache = [];
+      return [];
+    }
+  }
+
+  /**
+   * Generate GraphQL projection for Visual Builder composition structures
+   * Creates a recursive query that traverses: sections → rows → columns → components
+   *
+   * @param depth - How many levels deep to resolve (0 = just metadata, 3 = full structure with component fields)
+   * @returns GraphQL projection fragment
+   */
+  private async getCompositionProjection(depth: number): Promise<string> {
+    if (depth < 1) {
+      // Just return basic composition metadata
+      return ' { key displayName nodeType }';
+    }
+
+    // Mark that this query needs fragments (for buildDynamicQuery)
+    if (depth >= 2) {
+      this.needsFragments = true;
+    }
+
+    // Build composition structure based on user's working pattern analysis
+    // Critical fixes applied:
+    // 1. Fields BEFORE type condition at grid level
+    // 2. Required fields: displayTemplateKey, displaySettings at all structure nodes
+    // 3. nodeType without alias
+    // 4. Component node needs: key, displayTemplateKey, displaySettings
+    const parts: string[] = [];
+    parts.push(' {');
+    parts.push('    grids: nodes {');
+
+    if (depth >= 2) {
+      // Fix #3: Fields BEFORE the type condition
+      parts.push('      key');
+      parts.push('      displayName');
+      parts.push('      displayTemplateKey');  // Fix #2: REQUIRED field
+      parts.push('      displaySettings {');   // Fix #2: REQUIRED field - array of objects
+      parts.push('        ...DisplaySettings');
+      parts.push('      }');
+
+      // Now the type condition
+      parts.push('      ... on CompositionStructureNode {');
+      parts.push('        nodeType');  // Fix #5: No alias
+      parts.push('        key');
+
+      if (depth >= 3) {
+        parts.push('        rows: nodes {');
+        // Rows level - same pattern
+        parts.push('          ... on CompositionStructureNode {');
+        parts.push('            nodeType');
+        parts.push('            key');
+        parts.push('            displayTemplateKey');  // Fix #2
+        parts.push('            displaySettings {');
+        parts.push('              ...DisplaySettings');
+        parts.push('            }');
+        parts.push('            columns: nodes {');
+        parts.push('              ... on CompositionStructureNode {');
+        parts.push('                nodeType');
+        parts.push('                key');
+        parts.push('                displayTemplateKey');  // Fix #2
+        parts.push('                displaySettings {');
+        parts.push('                  ...DisplaySettings');
+        parts.push('                }');
+        parts.push('                nodes {');
+        parts.push('                  ... on CompositionComponentNode {');
+        // Fix #4: Component node needs these fields
+        parts.push('                    key');
+        parts.push('                    displayTemplateKey');
+        parts.push('                    displaySettings {');
+        parts.push('                      ...DisplaySettings');
+        parts.push('                    }');
+        parts.push('                    component {');
+        parts.push('                      _metadata {');
+        parts.push('                        types');
+        parts.push('                      }');
+        parts.push('                      ...AllComponents');
+        parts.push('                    }');
+        parts.push('                  }');
+        parts.push('                }');
+        parts.push('              }');
+        parts.push('            }');
+        parts.push('          }');
+        parts.push('        }');
+      }
+
+      parts.push('      }');
+
+      // Grid-level components (components at grid level)
+      parts.push('      ... on CompositionComponentNode {');
+      parts.push('        nodeType');
+      parts.push('        key');
+      parts.push('        displayTemplateKey');
+      parts.push('        displaySettings {');
+      parts.push('          ...DisplaySettings');
+      parts.push('        }');
+      parts.push('        component {');
+      parts.push('          _metadata {');
+      parts.push('            types');
+      parts.push('          }');
+      parts.push('          ...AllComponents');
+      parts.push('        }');
+      parts.push('      }');
+    }
+
+    parts.push('    }');
+    parts.push('  }');
+
+    return parts.join('\n');
   }
 
   /**

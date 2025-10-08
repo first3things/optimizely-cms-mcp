@@ -198,6 +198,29 @@ export class SchemaIntrospector {
   }
 
   /**
+   * Get all types that implement a specific interface
+   * Used to discover component types implementing _IComponent
+   */
+  async getTypesImplementing(interfaceName: string): Promise<string[]> {
+    await this.initialize();
+
+    const interfaceType = this.typeMap.get(interfaceName);
+    if (!interfaceType || interfaceType.kind !== 'INTERFACE') {
+      this.logger.warn(`Interface not found: ${interfaceName}`);
+      return [];
+    }
+
+    const intType = interfaceType as IntrospectionInterfaceType;
+    const implementingTypes = (intType.possibleTypes || []).map(t => t.name);
+
+    this.logger.debug(`Found ${implementingTypes.length} types implementing ${interfaceName}`, {
+      types: implementingTypes
+    });
+
+    return implementingTypes;
+  }
+
+  /**
    * Find the metadata type structure
    */
   async getMetadataType(): Promise<SchemaTypeInfo | null> {
