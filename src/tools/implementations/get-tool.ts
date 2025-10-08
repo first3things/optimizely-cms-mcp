@@ -154,12 +154,42 @@ This replaces the old search → locate → retrieve workflow with a single call
       }
 
       // Step 3: Get complete content with discovered fields
-      const enrichResult = await this.enrichWithFields(
-        foundContent.key,
-        foundContent.contentType,
-        input.locale,
-        input
-      );
+      let enrichResult;
+      let partialResult = false;
+      let enrichmentError = null;
+
+      try {
+        enrichResult = await this.enrichWithFields(
+          foundContent.key,
+          foundContent.contentType,
+          input.locale,
+          input
+        );
+      } catch (enrichError) {
+        // Field enrichment failed - return partial result with what we have
+        this.logger.warn('Field enrichment failed, returning partial result', {
+          error: enrichError.message,
+          contentKey: foundContent.key,
+          contentType: foundContent.contentType
+        });
+
+        partialResult = true;
+        enrichmentError = enrichError.message;
+
+        // Build minimal content object with metadata we have
+        enrichResult = {
+          content: {
+            _metadata: {
+              key: foundContent.key,
+              displayName: foundContent.displayName || 'Unknown',
+              types: [foundContent.contentType]
+            },
+            _partial: true,
+            _enrichmentError: enrichError.message
+          },
+          fieldsDiscovered: []
+        };
+      }
 
       // Step 4: Build output
       const output: GetOutput = {
@@ -169,9 +199,19 @@ This replaces the old search → locate → retrieve workflow with a single call
           contentType: foundContent.contentType,
           fieldsDiscovered: enrichResult.fieldsDiscovered,
           identifierUsed: input.identifier,
-          identifierType: identifierType
+          identifierType: identifierType,
+          partialResult: partialResult
         }
       };
+
+      // Add enrichment error details if present
+      if (enrichmentError) {
+        output.discovery.enrichmentError = enrichmentError;
+        output.discovery.suggestion = `Content found but field discovery failed. Try:\n` +
+          `1. Use locate({"identifier": "${foundContent.key}"}) to get basic metadata\n` +
+          `2. Use discover({"target": "fields", "contentType": "${foundContent.contentType}"}) to see available fields\n` +
+          `3. Use graph-query with discovered fields for full content`;
+      }
 
       // Add optional data
       if (foundContent.score !== undefined) {
@@ -357,6 +397,7 @@ This replaces the old search → locate → retrieve workflow with a single call
     return {
       key: primary._metadata.key,
       contentType: specificType,
+      displayName: primary._metadata.displayName,
       method: 'search',
       score: primary._score,
       alternatives: alternatives.length > 0 ? alternatives : undefined,
@@ -416,6 +457,7 @@ This replaces the old search → locate → retrieve workflow with a single call
     return {
       key: item._metadata.key,
       contentType: specificType,
+      displayName: item._metadata.displayName,
       method: 'locate-path',
       fieldsDiscovered: []
     };
@@ -470,6 +512,7 @@ This replaces the old search → locate → retrieve workflow with a single call
     return {
       key: item._metadata.key,
       contentType: specificType,
+      displayName: item._metadata.displayName,
       method: 'locate-key',
       fieldsDiscovered: []
     };
@@ -1442,6 +1485,9 @@ interface GetOutput {
     fieldsDiscovered: string[];
     identifierUsed: string;
     identifierType: string;
+    partialResult?: boolean;
+    enrichmentError?: string;
+    suggestion?: string;
     searchScore?: number;
     alternatives?: Array<{
       key: string;
@@ -1458,6 +1504,7 @@ interface FoundContent {
   key: string;
   contentType: string;
   method: string;
+  displayName?: string;
   score?: number;
   alternatives?: Array<{
     key: string;

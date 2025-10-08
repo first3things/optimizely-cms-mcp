@@ -50,17 +50,27 @@ export class OptimizelyGraphClient {
       try {
         const response = await originalFetch(url, init);
         const duration = Date.now() - start;
-        
-        logAPIResponse(urlString, response.status, duration);
-        
+
         if (!response.ok) {
           const errorBody = await response.text();
+
+          // Log error response with body
+          this.logger.error(`GraphQL Error Response (${response.status}):`, {
+            url: urlString,
+            status: response.status,
+            statusText: response.statusText,
+            duration: `${duration}ms`,
+            body: errorBody
+          });
+
           throw new APIError(
             `GraphQL request failed: ${response.statusText}`,
             response.status,
             { body: errorBody }
           );
         }
+
+        logAPIResponse(urlString, response.status, duration);
         
         return response;
       } catch (error) {

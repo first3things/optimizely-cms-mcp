@@ -100,17 +100,26 @@ export abstract class BaseAPIClient {
   protected async handleErrorResponse(response: Response): Promise<never> {
     const contentType = response.headers.get('content-type');
     let errorBody: any = {};
-    
+
     if (contentType?.includes('application/json')) {
       try {
         errorBody = await response.json();
+        // LOG THE ERROR BODY FOR DEBUGGING
+        this.logger.error('GraphQL Error Response:', {
+          status: response.status,
+          body: JSON.stringify(errorBody, null, 2)
+        });
       } catch {
         // Failed to parse JSON error
       }
     } else {
       errorBody.message = await response.text();
+      this.logger.error('Text Error Response:', {
+        status: response.status,
+        body: errorBody.message
+      });
     }
-    
+
     const message = errorBody.message || errorBody.error || response.statusText;
     
     switch (response.status) {
@@ -155,12 +164,19 @@ export abstract class BaseAPIClient {
    * Log response details
    */
   protected logResponse(url: string, response: Response): void {
-    this.logger.debug('API Response:', {
+    const logData = {
       url,
       status: response.status,
       statusText: response.statusText,
       headers: Object.fromEntries(response.headers.entries())
-    });
+    };
+
+    // Log errors with ERROR level for visibility
+    if (!response.ok) {
+      this.logger.error('API Response:', logData);
+    } else {
+      this.logger.debug('API Response:', logData);
+    }
   }
   
   /**
