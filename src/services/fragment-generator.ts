@@ -28,11 +28,19 @@ export class FragmentGenerator {
     const componentTypes = await this.discoverComponentTypes();
     this.logger.info(`Discovered ${componentTypes.length} component types`, { types: componentTypes });
 
+    // Detect field conflicts across all component types
+    const conflictingFields = await this.detectFieldConflicts(componentTypes);
+    if (conflictingFields.size > 0) {
+      this.logger.warn(`Detected ${conflictingFields.size} conflicting fields, will skip them`, {
+        fields: Array.from(conflictingFields.keys())
+      });
+    }
+
     // Generate fragments for each component
     const fragmentParts: string[] = [];
 
     for (const typeName of componentTypes) {
-      const componentFragment = await this.generateComponentFragment(typeName);
+      const componentFragment = await this.generateComponentFragment(typeName, conflictingFields);
       if (componentFragment) {
         fragmentParts.push(componentFragment);
       }
@@ -129,10 +137,67 @@ export class FragmentGenerator {
   }
 
   /**
+   * Detect fields that have conflicting types across component types
+   * Returns a Set of field names that should be skipped to avoid GraphQL errors
+   */
+  private async detectFieldConflicts(componentTypes: string[]): Promise<Set<string>> {
+    this.logger.debug('Detecting field conflicts across component types');
+
+    // Map: fieldName → Map(componentType → fieldTypeSignature)
+    const fieldMap = new Map<string, Map<string, string>>();
+
+    for (const componentType of componentTypes) {
+      try {
+        const typeInfo = await this.introspector.getContentType(componentType);
+        if (!typeInfo || !typeInfo.fields) continue;
+
+        for (const field of typeInfo.fields) {
+          // Skip system fields
+          if (field.name.startsWith('_')) continue;
+
+          if (!fieldMap.has(field.name)) {
+            fieldMap.set(field.name, new Map());
+          }
+
+          // Create a signature that includes both type and projection
+          const projection = this.getFieldProjection(field);
+          const signature = projection || field.type;
+
+          fieldMap.get(field.name)!.set(componentType, signature);
+        }
+      } catch (error) {
+        this.logger.debug(`Failed to get type info for ${componentType}`, { error });
+      }
+    }
+
+    // Find fields with conflicting signatures
+    const conflictingFields = new Set<string>();
+
+    for (const [fieldName, typeSignatures] of fieldMap.entries()) {
+      const uniqueSignatures = new Set(typeSignatures.values());
+
+      // If there are multiple different signatures for the same field name, it's a conflict
+      if (uniqueSignatures.size > 1) {
+        conflictingFields.add(fieldName);
+        this.logger.debug(`Field conflict detected: ${fieldName}`, {
+          signatures: Array.from(uniqueSignatures),
+          components: Array.from(typeSignatures.keys())
+        });
+      }
+    }
+
+    return conflictingFields;
+  }
+
+  /**
    * Generate fragment for a specific component type
    * Creates an inline fragment with all queryable fields
+   * @param conflictingFields - Set of field names to skip due to type conflicts
    */
-  async generateComponentFragment(typeName: string): Promise<string | null> {
+  async generateComponentFragment(
+    typeName: string,
+    conflictingFields: Set<string> = new Set()
+  ): Promise<string | null> {
     this.logger.debug(`Generating fragment for component: ${typeName}`);
 
     try {
@@ -149,6 +214,12 @@ export class FragmentGenerator {
       for (const field of typeInfo.fields) {
         // Skip system fields (already in base fragment)
         if (field.name.startsWith('_')) continue;
+
+        // Skip conflicting fields
+        if (conflictingFields.has(field.name)) {
+          this.logger.debug(`Skipping conflicting field: ${typeName}.${field.name}`);
+          continue;
+        }
 
         const projection = this.getFieldProjection(field);
         if (projection) {

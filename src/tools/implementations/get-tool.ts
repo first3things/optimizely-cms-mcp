@@ -896,41 +896,14 @@ This replaces the old search → locate → retrieve workflow with a single call
   ): Promise<string> {
     const parts: string[] = [];
 
-    // Add supporting fragments
+    // Add DisplaySettings fragment (required for displaySettings field)
     parts.push('fragment DisplaySettings on CompositionDisplaySetting {');
     parts.push('  key');
     parts.push('  value');
     parts.push('}');
     parts.push('');
 
-    parts.push('fragment ContentUrl on ContentReference {');
-    parts.push('  url {');
-    parts.push('    default');
-    parts.push('    hierarchical');
-    parts.push('  }');
-    parts.push('}');
-    parts.push('');
-
-    parts.push('fragment LinkCollection on Link {');
-    parts.push('  text');
-    parts.push('  url {');
-    parts.push('    default');
-    parts.push('  }');
-    parts.push('}');
-    parts.push('');
-
-    parts.push('fragment LinkUrl on Link {');
-    parts.push('  url {');
-    parts.push('    default');
-    parts.push('    hierarchical');
-    parts.push('  }');
-    parts.push('  title');
-    parts.push('  target');
-    parts.push('  text');
-    parts.push('}');
-    parts.push('');
-
-    // Add AllComponents fragment
+    // Add AllComponents fragment (includes all component field projections)
     const allComponentsFragment = await this.getAllComponentsFragment();
     parts.push(allComponentsFragment);
     parts.push('');
