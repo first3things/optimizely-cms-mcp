@@ -21,17 +21,17 @@ import { DiscoveryCache } from '../../services/discovery-cache.js';
  */
 export class RetrieveTool extends BaseTool<RetrieveInput, RetrieveOutput> {
   protected readonly name = 'retrieve';
-  protected readonly description = `Get complete content data from Content Management API.
+  protected readonly description = `Get content from Content Management API (CMA).
 
-Use this when you need full content details for editing or detailed analysis.
+**RARELY NEEDED** - The "get" tool gets content from Graph API (faster, includes composition).
+Use retrieve only when:
+- "get" tool returns partial results and suggests using retrieve
+- You need CMA-specific data (versions, workflow status)
+- You're updating/editing content and need the CMA format
 
-Workflow:
-1. Use 'search' or 'locate' to find content
-2. Use 'retrieve' with the content ID/key to get full details
+For reading content: Use "get" instead (it's faster and more complete).
 
-Example: retrieve({"identifier": "12345", "includeSchema": true})
-
-This tool provides complete property values, block data, and version info.`;
+Example: retrieve({"identifier": "12345", "includeSchema": true})`;
   
   protected readonly inputSchema = z.object({
     identifier: z.string().describe('Content ID, key, or path'),

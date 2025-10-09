@@ -44,15 +44,19 @@ export class DiscoverTool extends BaseTool<DiscoverInput, DiscoverOutput> {
   protected readonly name = 'discover';
   protected readonly description = `Discover content types, fields, and schema information from Optimizely CMS.
 
-🚀 ALWAYS USE THIS FIRST before searching or querying content!
+**USE ONLY WHEN NEEDED** - The "get" tool auto-discovers fields, so you usually don't need this.
 
-Quick examples:
-- List all content types: discover({"target": "types"})
-- Get fields for a type: discover({"target": "fields", "contentType": "ArticlePage"})
-- Get complete schema: discover({"target": "schema", "contentType": "ArticlePage"})
-- Discover everything: discover({"target": "all"})
+Use discover when:
+- User explicitly asks "what content types exist?"
+- User asks "what fields does ArticlePage have?"
+- You need to explore schema before building custom queries
 
-This tool helps you understand what content and fields are available in the CMS.`;
+DO NOT use discover before every get() call - get() already does field discovery.
+
+Examples:
+- List types: discover({"target": "types"})
+- Get fields: discover({"target": "fields", "contentType": "ArticlePage"})
+- Get schema: discover({"target": "schema", "contentType": "ArticlePage"})`;
   protected readonly inputSchema = discoverSchema;
   
   private schemaService: SchemaDiscoveryService | null = null;

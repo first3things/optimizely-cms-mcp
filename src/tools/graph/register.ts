@@ -16,7 +16,7 @@ export function getGraphTools(): Tool[] {
   return [
     {
       name: 'graph-query',
-      description: '⚠️ DEPRECATED - Use the "search" tool instead! Run help({}) to learn the correct workflow. Only use this for complex queries that cannot be handled by the new tools.',
+      description: '⚠️ DEPRECATED - DO NOT USE! Use "get" tool instead - it handles everything automatically including Visual Builder content. Only use graph-query if explicitly instructed by error messages.',
       inputSchema: {
         type: 'object',
         properties: {
