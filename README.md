@@ -251,31 +251,6 @@ The server uses pattern matching and similarity scoring to:
 3. **Create** content using `content_creation_wizard` with intelligent field mapping
 4. **Validate** against discovered schema constraints
 
-## Migration Roadmap
-
-This server is undergoing a major architectural transformation from 39 specialized tools to 10 powerful, discovery-first tools:
-
-### Phase 1 (Current) - Foundation
-- ✅ Removed all hardcoded content types and field names
-- ✅ Implemented discovery tools for types and schemas
-- ✅ Built intelligent field mapping engine
-- 🔄 Operating with 13 essential tools during transition
-
-### Phase 2 - Search & Retrieval
-- 🔲 Implement unified `search` tool replacing multiple graph tools
-- 🔲 Add `locate` tool for finding content by ID/path
-- 🔲 Build `retrieve` tool for full content data
-
-### Phase 3 - Content Management
-- 🔲 Implement `create` tool with full field mapping
-- 🔲 Add `update` tool with intelligent patching
-- 🔲 Build `manage` tool for lifecycle operations
-
-### Phase 4 - Help & Polish
-- 🔲 Add context-aware `help` tool
-- 🔲 Remove compatibility layers
-- 🔲 Achieve target of 10 core tools
-
 ## Development
 
 ### Project Structure
@@ -355,24 +330,6 @@ npm run debug:graph
 # Validate API key format
 npm run validate:key
 ```
-
-### Debugging Scripts
-
-The `scripts/` directory contains utilities for testing and debugging:
-
-- **`quick-test.js`** - Test MCP server tools through stdio
-- **`test-with-debug.js`** - Detailed API request/response logging
-- **`debug-graph.js`** - Direct GraphQL endpoint testing
-- **`debug-auth-comprehensive.js`** - Test all authentication methods
-- **`validate-key.js`** - Validate GraphQL key format
-- **`find-graphql-endpoint.js`** - Discover your GraphQL endpoint
-
-For PowerShell users, set environment variables like this:
-```powershell
-$env:LOG_LEVEL="debug"; npm run test:tools:debug
-```
-
-See [scripts/TESTING_SCRIPTS.md](scripts/TESTING_SCRIPTS.md) for detailed documentation.
 
 ## Troubleshooting
 
